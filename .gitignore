@@ -1,0 +1,17 @@
+# Private CV data - never commit your real information.
+# Copy cv_example.php to cv.php and fill it in; cv.php always takes
+# priority over cv_example.php (see src/CvData.php).
+/cv.php
+
+# Downloaded/cached remote logo images (re-created automatically).
+/cache/logos/*
+!/cache/logos/.gitkeep
+
+# Generated PDF exports, if you ever save one to disk locally.
+*.pdf
+
+# Common OS/editor cruft.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

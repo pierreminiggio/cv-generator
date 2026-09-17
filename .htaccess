@@ -1,0 +1,34 @@
+# Front-controller routing: every request is handled by public/index.php.
+# This is an internal rewrite (the browser's URL bar does not change),
+# not an HTTP redirect - it lets the whole project sit at the domain/
+# subfolder root while all the real code stays safely under public/.
+#
+# Everything OUTSIDE public/ (src/, cv.php, cv_example.php, cv_image.png,
+# cache/, vendor code, ...) is never served directly: it is only ever
+# read from PHP via the filesystem, which is exactly what we want since
+# cv.php can hold personal data.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # If the request already targets an existing file or directory inside
+    # public/ (shouldn't normally happen from the outside, but keep it safe),
+    # let Apache serve it as-is instead of rewriting it.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
+    RewriteRule ^ - [L]
+
+    # Everything else is handled by the front controller.
+    RewriteRule ^ public/index.php [L]
+</IfModule>
+
+# If mod_rewrite isn't available, fall back to a plain redirect so the
+# CV is still reachable (this DOES change the URL, unlike the rule above).
+<IfModule !mod_rewrite.c>
+    RedirectMatch 302 ^/(?!public/index\.php).*$ /public/index.php
+</IfModule>
+
+# Never serve these directly, even if something bypasses the rewrite above.
+<FilesMatch "^cv\.php$|^cv_example\.php$">
+    Require all denied
+</FilesMatch>
