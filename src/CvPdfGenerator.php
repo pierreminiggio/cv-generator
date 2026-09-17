@@ -52,6 +52,14 @@ final class CvPdfGenerator extends FPDF
     private const LOGO_SIZE = 8.0;
     private const LOGO_TEXT_GAP = 3.0;
 
+    // The semantic-ui-flag sprite's flags are 16x11px, authored for 96dpi
+    // screens; drawing them at that same physical size (rather than
+    // stretching them to fill a bigger box) keeps them crisp instead of
+    // soft/blocky.
+    private const FLAG_NATIVE_W_PX = 16.0;
+    private const FLAG_NATIVE_H_PX = 11.0;
+    private const PX_TO_MM_96DPI = 25.4 / 96.0;
+
     private const FREETIME_PAD = 2.5;
 
     // ---- Colours (RGB 0-255) ----------------------------------------------
@@ -284,19 +292,26 @@ final class CvPdfGenerator extends FPDF
 
     private function drawLanguageLine(array $lang, float $x, float $y, float $width, bool $draw): float
     {
-        $flagW = 8.0;
-        $flagH = 5.5; // matches the sprite's native 16:11 aspect ratio
+        // Keep a fixed-width "slot" so every language label lines up at the
+        // same X regardless of the flag's own size - but draw the flag
+        // itself at its native sprite resolution (16x11px, at the 96dpi
+        // the sprite was authored for) rather than stretching it up to
+        // fill the slot, which just made it look soft/blocky.
+        $slotW = 8.0;
+        $flagW = self::FLAG_NATIVE_W_PX * self::PX_TO_MM_96DPI;
+        $flagH = self::FLAG_NATIVE_H_PX * self::PX_TO_MM_96DPI;
         $lh = 4.6;
 
         if ($draw) {
-            $this->drawFlag((string) ($lang['code'] ?? ''), $x, $y + 0.3, $flagW, $flagH);
+            $flagY = $y + ($lh - $flagH) / 2;
+            $this->drawFlag((string) ($lang['code'] ?? ''), $x, $flagY, $flagW, $flagH, $slotW, $lh - 0.6);
         }
 
         $this->applyFont(false, false, self::FS_SKILL);
         $this->SetTextColor(...self::C_TEXT_DEFAULT);
         if ($draw) {
-            $this->SetXY($x + $flagW + 2.5, $y);
-            $this->Cell($width - $flagW - 2.5, $lh, $this->txt((string) ($lang['label'] ?? '')));
+            $this->SetXY($x + $slotW + 2.5, $y);
+            $this->Cell($width - $slotW - 2.5, $lh, $this->txt((string) ($lang['label'] ?? '')));
         }
 
         return $y + $lh;
@@ -716,7 +731,7 @@ final class CvPdfGenerator extends FPDF
     // Flag swatches for the Languages block
     // =========================================================================
 
-    private function drawFlag(string $code, float $x, float $y, float $w, float $h): void
+    private function drawFlag(string $code, float $x, float $y, float $w, float $h, float $fallbackW, float $fallbackH): void
     {
         $path = $this->flagCache->resolve($code);
 
@@ -729,11 +744,14 @@ final class CvPdfGenerator extends FPDF
             }
         }
 
+        // No image available: fall back to a readable text badge instead
+        // of trying to cram the code into the (deliberately tiny,
+        // native-resolution) flag box.
         $this->SetFillColor(...self::C_LOGO_FILL);
-        $this->Rect($x, $y, $w, $h, 'F');
+        $this->Rect($x, $y, $fallbackW, $fallbackH, 'F');
         $this->applyFont(true, false, 5.5);
         $this->SetTextColor(...self::C_HEADING);
-        $this->SetXY($x, $y + $h / 2 - 1.6);
-        $this->Cell($w, 3.2, strtoupper($code), 0, 0, 'C');
+        $this->SetXY($x, $y + $fallbackH / 2 - 1.6);
+        $this->Cell($fallbackW, 3.2, strtoupper($code), 0, 0, 'C');
     }
 }
