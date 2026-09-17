@@ -76,16 +76,18 @@ final class CvPdfGenerator extends FPDF
     /** @var array<string,mixed> */
     private array $data;
     private LogoCache $logoCache;
+    private FlagSpriteCache $flagCache;
 
     // Spacing "levers" tightened by fitContent() until everything fits.
     private float $entryGap = 7.0;  // vertical gap between two different entries
     private float $lineGap  = 0.9;  // gap between title/did/used (or title/content) lines
 
-    public function __construct(array $data, LogoCache $logoCache)
+    public function __construct(array $data, LogoCache $logoCache, FlagSpriteCache $flagCache)
     {
         parent::__construct('P', 'mm', 'A4');
         $this->data = $data;
         $this->logoCache = $logoCache;
+        $this->flagCache = $flagCache;
 
         $this->SetAutoPageBreak(false);
         $this->SetMargins(self::MARGIN_L, 0, self::MARGIN_R);
@@ -283,7 +285,7 @@ final class CvPdfGenerator extends FPDF
     private function drawLanguageLine(array $lang, float $x, float $y, float $width, bool $draw): float
     {
         $flagW = 8.0;
-        $flagH = 5.0;
+        $flagH = 5.5; // matches the sprite's native 16:11 aspect ratio
         $lh = 4.6;
 
         if ($draw) {
@@ -475,9 +477,6 @@ final class CvPdfGenerator extends FPDF
         if ($path !== null) {
             try {
                 $this->Image($path, $x, $y, self::LOGO_SIZE, self::LOGO_SIZE);
-                $this->SetDrawColor(...self::C_HEADING);
-                $this->SetLineWidth(0.25);
-                $this->Rect($x, $y, self::LOGO_SIZE, self::LOGO_SIZE);
                 return;
             } catch (\Throwable $e) {
                 // fall through to the placeholder box below
@@ -485,9 +484,7 @@ final class CvPdfGenerator extends FPDF
         }
 
         $this->SetFillColor(...self::C_LOGO_FILL);
-        $this->SetDrawColor(...self::C_HEADING);
-        $this->SetLineWidth(0.25);
-        $this->Rect($x, $y, self::LOGO_SIZE, self::LOGO_SIZE, 'DF');
+        $this->Rect($x, $y, self::LOGO_SIZE, self::LOGO_SIZE, 'F');
     }
 
     // =========================================================================
@@ -721,70 +718,22 @@ final class CvPdfGenerator extends FPDF
 
     private function drawFlag(string $code, float $x, float $y, float $w, float $h): void
     {
-        $this->SetLineWidth(0.15);
-        $this->SetDrawColor(120, 120, 120);
+        $path = $this->flagCache->resolve($code);
 
-        switch (strtoupper($code)) {
-            case 'FR':
-                $this->stripe3($x, $y, $w, $h, [0, 38, 84], [255, 255, 255], [206, 17, 38], true);
-                break;
-            case 'US':
-                $this->SetFillColor(178, 34, 52);
-                $this->Rect($x, $y, $w, $h, 'F');
-                $this->SetFillColor(255, 255, 255);
-                for ($i = 1; $i < 7; $i += 2) {
-                    $this->Rect($x, $y + $i * $h / 7, $w, $h / 7, 'F');
-                }
-                $this->SetFillColor(60, 59, 110);
-                $this->Rect($x, $y, $w * 0.4, $h * 4 / 7, 'F');
-                break;
-            case 'ES':
-                $this->SetFillColor(170, 21, 27);
-                $this->Rect($x, $y, $w, $h, 'F');
-                $this->SetFillColor(241, 191, 0);
-                $this->Rect($x, $y + $h * 0.25, $w, $h * 0.5, 'F');
-                break;
-            case 'CN':
-                $this->SetFillColor(222, 41, 16);
-                $this->Rect($x, $y, $w, $h, 'F');
-                $this->SetFillColor(255, 222, 0);
-                $this->Rect($x + $w * 0.12, $y + $h * 0.18, $w * 0.16, $h * 0.28, 'F');
-                break;
-            case 'KE':
-                $this->stripe3($x, $y, $w, $h, [0, 0, 0], [200, 16, 46], [0, 104, 60], false);
-                break;
-            default:
-                $this->SetFillColor(...self::C_LOGO_FILL);
-                $this->Rect($x, $y, $w, $h, 'F');
-                $this->applyFont(true, false, 5.5);
-                $this->SetTextColor(...self::C_HEADING);
-                $this->SetXY($x, $y + $h / 2 - 1.6);
-                $this->Cell($w, 3.2, $code, 0, 0, 'C');
+        if ($path !== null) {
+            try {
+                $this->Image($path, $x, $y, $w, $h);
                 return;
+            } catch (\Throwable $e) {
+                // fall through to the placeholder badge below
+            }
         }
 
-        $this->Rect($x, $y, $w, $h);
-    }
-
-    /** @param int[] $c1 @param int[] $c2 @param int[] $c3 */
-    private function stripe3(float $x, float $y, float $w, float $h, array $c1, array $c2, array $c3, bool $vertical): void
-    {
-        if ($vertical) {
-            $sw = $w / 3;
-            $this->SetFillColor(...$c1);
-            $this->Rect($x, $y, $sw, $h, 'F');
-            $this->SetFillColor(...$c2);
-            $this->Rect($x + $sw, $y, $sw, $h, 'F');
-            $this->SetFillColor(...$c3);
-            $this->Rect($x + 2 * $sw, $y, $w - 2 * $sw, $h, 'F');
-        } else {
-            $sh = $h / 3;
-            $this->SetFillColor(...$c1);
-            $this->Rect($x, $y, $w, $sh, 'F');
-            $this->SetFillColor(...$c2);
-            $this->Rect($x, $y + $sh, $w, $sh, 'F');
-            $this->SetFillColor(...$c3);
-            $this->Rect($x, $y + 2 * $sh, $w, $h - 2 * $sh, 'F');
-        }
+        $this->SetFillColor(...self::C_LOGO_FILL);
+        $this->Rect($x, $y, $w, $h, 'F');
+        $this->applyFont(true, false, 5.5);
+        $this->SetTextColor(...self::C_HEADING);
+        $this->SetXY($x, $y + $h / 2 - 1.6);
+        $this->Cell($w, 3.2, strtoupper($code), 0, 0, 'C');
     }
 }

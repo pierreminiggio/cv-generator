@@ -28,8 +28,11 @@ vendored under `src/Fpdf/`).
 │   ├── CvData.php         Picks cv.php if present, else cv_example.php
 │   ├── CvPdfGenerator.php All the layout/drawing logic
 │   ├── LogoCache.php      Downloads + locally caches the remote logo images
+│   ├── FlagSpriteCache.php Downloads + crops + caches the language flag sprite
 │   └── Fpdf/               Vendored FPDF 1.9 (fpdf.php + core font metrics + license)
-└── cache/logos/           Downloaded logo cache (git-ignored, auto-created)
+└── cache/
+    ├── logos/              Downloaded logo cache (git-ignored, auto-created)
+    └── flags/              Downloaded/cropped flag cache (git-ignored, auto-created)
 ```
 
 ## Getting started
@@ -66,9 +69,14 @@ The array shape is documented with inline comments at the top of
   the generator automatically shrinks that title's font just enough to
   make it fit, rather than letting it wrap.
 - The languages block's `code` (e.g. `FR`, `US`, `ES`, `CN`, `KE`) draws a
-  small simplified flag swatch. `FR`, `US`, `ES`, `CN` and `KE` have a
-  dedicated (simplified) flag drawing; any other code falls back to a
-  plain badge showing the code itself.
+  small flag, cropped at request time from the semantic-ui-flag sprite
+  sheet (`FLAG_SPRITE_URL` in `public/index.php`) and cached locally under
+  `cache/flags/` (see `src/FlagSpriteCache.php`). The crop coordinates for
+  `FR`, `US`, `ES`, `CN` and `KE` are in `FlagSpriteCache::POSITIONS`; add
+  more codes there (taken from the `background-position` values in
+  semantic-ui-flag's `flag.min.css`) if you add more languages. Any code
+  without a known position - or if the sprite can't be downloaded - falls
+  back to a plain badge showing the code itself.
 - `freetime` lines accept a `value_segments` array instead of a plain
   `value` string if you want part of the line to be a clickable link (see
   how `cv_example.php` could be extended for the "Built a web video
@@ -121,9 +129,11 @@ the upstream repository were left out.
 
 - The original CV mockup used emoji flags (🇫🇷🇺🇸🇪🇸🇨🇳🇰🇪) for languages.
   Core PDF fonts (used here to keep the project dependency-free) can't
-  render color emoji, so language flags are instead drawn as small
-  simplified geometric flag swatches - a deliberate, PDF-safe substitute
-  for the same idea, not an oversight.
+  render color emoji, so language flags are instead cropped from the
+  semantic-ui-flag sprite sheet used on miniggiodev.fr (see above) - same
+  visual idea, PDF-safe. That sprite's flags are tiny in their source
+  (16x11px), so they'll look a little soft/blocky at print resolution;
+  that's an inherent limit of that source image, not a bug here.
 - Accented characters (é, è, à, ç, …) are converted from UTF-8 to the
   Windows-1252 encoding FPDF's core fonts use. That covers French and
   Western-European text; characters outside that encoding (e.g. Chinese,

@@ -10,11 +10,16 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/src/CvData.php';
 require_once dirname(__DIR__) . '/src/LogoCache.php';
+require_once dirname(__DIR__) . '/src/FlagSpriteCache.php';
 require_once dirname(__DIR__) . '/src/CvPdfGenerator.php';
 
 use Cv\CvData;
 use Cv\CvPdfGenerator;
+use Cv\FlagSpriteCache;
 use Cv\LogoCache;
+
+// Sprite sheet used to draw the small language flags (semantic-ui-flag).
+const FLAG_SPRITE_URL = 'https://miniggiodev.fr/images/vendor/semantic-ui-flag/flags.png';
 
 $projectRoot = dirname(__DIR__);
 
@@ -22,8 +27,9 @@ try {
     $data = CvData::load($projectRoot);
 
     $logoCache = new LogoCache($projectRoot . '/cache/logos');
+    $flagCache = new FlagSpriteCache(FLAG_SPRITE_URL, $projectRoot . '/cache/flags');
 
-    $pdf = new CvPdfGenerator($data, $logoCache);
+    $pdf = new CvPdfGenerator($data, $logoCache, $flagCache);
     $pdf->build();
 
     $name = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($data['header']['name'] ?? 'CV'));
