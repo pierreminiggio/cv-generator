@@ -271,7 +271,7 @@ final class CvPdfGenerator extends FPDF
             if ($bi > 0) {
                 $y += 3.0;
             }
-            $y = $this->drawSectionHeading($block['heading'] ?? '', $x, $y, $width, $draw, false);
+            $y = $this->drawSectionHeading($block['heading'] ?? '', $x, $y, $width, $draw, false, self::C_TEXT_DEFAULT);
 
             if (isset($block['languages'])) {
                 foreach ($block['languages'] as $lang) {
@@ -292,26 +292,29 @@ final class CvPdfGenerator extends FPDF
 
     private function drawLanguageLine(array $lang, float $x, float $y, float $width, bool $draw): float
     {
-        // Keep a fixed-width "slot" so every language label lines up at the
-        // same X regardless of the flag's own size - but draw the flag
-        // itself at its native sprite resolution (16x11px, at the 96dpi
-        // the sprite was authored for) rather than stretching it up to
-        // fill the slot, which just made it look soft/blocky.
-        $slotW = 8.0;
+        // The flag sits a little inset from the column's left edge, and the
+        // label starts right after it with only a small gap - previously
+        // both were separated by an oversized fixed "slot", which read as a
+        // big empty margin between the flag and its text.
+        $flagInsetX = 1.2;
+        $textGap = 1.3;
         $flagW = self::FLAG_NATIVE_W_PX * self::PX_TO_MM_96DPI;
         $flagH = self::FLAG_NATIVE_H_PX * self::PX_TO_MM_96DPI;
         $lh = 4.6;
 
+        $flagX = $x + $flagInsetX;
+        $textX = $flagX + $flagW + $textGap;
+
         if ($draw) {
             $flagY = $y + ($lh - $flagH) / 2;
-            $this->drawFlag((string) ($lang['code'] ?? ''), $x, $flagY, $flagW, $flagH, $slotW, $lh - 0.6);
+            $this->drawFlag((string) ($lang['code'] ?? ''), $flagX, $flagY, $flagW, $flagH, $flagW + $flagInsetX, $lh - 0.6);
         }
 
         $this->applyFont(false, false, self::FS_SKILL);
         $this->SetTextColor(...self::C_TEXT_DEFAULT);
         if ($draw) {
-            $this->SetXY($x + $slotW + 2.5, $y);
-            $this->Cell($width - $slotW - 2.5, $lh, $this->txt((string) ($lang['label'] ?? '')));
+            $this->SetXY($textX, $y);
+            $this->Cell($width - ($textX - $x), $lh, $this->txt((string) ($lang['label'] ?? '')));
         }
 
         return $y + $lh;
@@ -335,7 +338,7 @@ final class CvPdfGenerator extends FPDF
     private function drawExperiences(float $top, bool $draw): float
     {
         $x = self::MARGIN_L;
-        $y = $this->drawSectionHeading('Work Experiences :', $x, $top, self::EXP_COL_W, $draw, true);
+        $y = $this->drawSectionHeading('Work Experiences :', $x, $top, self::EXP_COL_W, $draw, true, self::C_TEXT_DEFAULT);
 
         $entries = $this->data['experiences'] ?? [];
         foreach ($entries as $i => $entry) {
@@ -355,7 +358,7 @@ final class CvPdfGenerator extends FPDF
     private function drawEducationAndFreetime(float $top, bool $draw): float
     {
         $x = self::MARGIN_L + self::EXP_COL_W + self::COL_GAP_EXP;
-        $y = $this->drawSectionHeading('Education :', $x, $top, self::EDU_COL_W, $draw, true);
+        $y = $this->drawSectionHeading('Education :', $x, $top, self::EDU_COL_W, $draw, true, self::C_TEXT_DEFAULT);
 
         $entries = $this->data['education'] ?? [];
         foreach ($entries as $i => $entry) {
@@ -438,13 +441,14 @@ final class CvPdfGenerator extends FPDF
             $lh = $this->lineHeightFor($size);
             if ($draw) {
                 $this->applyFont(true, false, $size);
-                $this->SetTextColor(...self::C_ENTRY_DARK);
-                $this->SetXY($textX, $y);
-                $this->Cell($textWidth, $lh, $flat);
+                $this->SetTextColor(...self::C_TEXT_DEFAULT);
+                // Text(), not Cell(), so this lines up flush with every
+                // other (wrapped) entry title - see drawStyledLines().
+                $this->Text($textX, $y + 0.5 * $lh + 0.3 * $this->FontSize, $flat);
             }
             $y += $lh;
         } else {
-            $words = $this->styledWords($title, true, false, self::C_ENTRY_DARK);
+            $words = $this->styledWords($title, true, false, self::C_TEXT_DEFAULT);
             $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_TITLE);
             $lh = $this->lineHeightFor(self::FS_ENTRY_TITLE);
             $y = $this->drawStyledLines($wrapped, $textX, $y, $lh, self::FS_ENTRY_TITLE, $draw);
@@ -506,16 +510,46 @@ final class CvPdfGenerator extends FPDF
     // Section headings ("Software Development :", "Work Experiences :", ...)
     // =========================================================================
 
-    private function drawSectionHeading(string $text, float $x, float $y, float $width, bool $draw, bool $bigGap): float
+    private function drawSectionHeading(string $text, float $x, float $y, float $width, bool $draw, bool $bigGap, ?array $color = null): float
     {
+        $color = $color ?? self::C_HEADING;
+        $floorSize = 8.5;
+
         if ($bigGap) {
             $y += self::SECTION_HEADER_GAP;
         }
 
-        $words = $this->styledWords($text, true, false, self::C_HEADING);
-        $wrapped = $this->wrapStyled($words, $width, self::FS_SECTION_HEADING, true);
-        $lh = $this->lineHeightFor(self::FS_SECTION_HEADING);
-        $y = $this->drawStyledLines($wrapped, $x, $y, $lh, self::FS_SECTION_HEADING, $draw, true);
+        // Headings read best on a single line (e.g. "Network and
+        // Telecommunication (Background) :" wrapping with just "(Background) :"
+        // orphaned onto its own line looked bad), so shrink the font just
+        // enough to make that happen instead of wrapping whenever possible.
+        $flat = $this->txt(str_replace("\n", ' ', $text));
+        $this->applyFont(true, false, self::FS_SECTION_HEADING);
+        $size = $this->GetStringWidth($flat) <= $width
+            ? self::FS_SECTION_HEADING
+            : $this->shrinkToFit($flat, $width, self::FS_SECTION_HEADING, $floorSize);
+
+        $this->applyFont(true, false, $size);
+
+        if ($this->GetStringWidth($flat) <= $width) {
+            $lh = $this->lineHeightFor($size);
+            if ($draw) {
+                $this->SetFont('Arial', 'BU', $size);
+                $this->SetTextColor(...$color);
+                // Text() (no implicit left padding) instead of Cell(), so
+                // headings line up flush with the body text below them,
+                // which is also drawn with Text() (see drawStyledLines()).
+                $this->Text($x, $y + 0.5 * $lh + 0.3 * $this->FontSize, $flat);
+            }
+            $y += $lh;
+        } else {
+            // Safety net for an even longer heading than expected: wrap
+            // rather than let it overflow past the column.
+            $words = $this->styledWords($text, true, false, $color);
+            $wrapped = $this->wrapStyled($words, $width, $floorSize, true);
+            $lh = $this->lineHeightFor($floorSize);
+            $y = $this->drawStyledLines($wrapped, $x, $y, $lh, $floorSize, $draw, true);
+        }
 
         if ($bigGap) {
             $y += self::SECTION_HEADER_GAP;
@@ -558,24 +592,106 @@ final class CvPdfGenerator extends FPDF
             }
 
             foreach ($merged as $wi => $token) {
-                // Convert to the font's native CP1252 encoding right away,
-                // so every later width measurement (word-wrap, shrink-to-fit)
-                // is computed on the exact same bytes that get drawn -
-                // mixing UTF-8 measurements with CP1252 drawing produces
-                // mismatched cell widths (visible as stray extra spacing
-                // after accented words).
-                $words[] = [
-                    'text' => $this->txt($token),
-                    'bold' => $bold,
-                    'italic' => $italic,
-                    'color' => $color,
-                    'break' => $pi > 0 && $wi === 0,
-                    'link' => null,
-                ];
+                // A token may itself contain one or more flag emoji glued to
+                // surrounding punctuation with no space (e.g. "\u{1F1FA}\u{1F1F8},"),
+                // so split it into text/flag pieces first. Only the first
+                // piece of a token can start a new line ('break') or needs a
+                // space before it from the previous token ('glue' = false);
+                // every other piece stays glued directly to what precedes it.
+                foreach ($this->splitFlagPieces($token) as $pj => $piece) {
+                    $isFirst = $pj === 0;
+
+                    if ($piece['type'] === 'flag') {
+                        $words[] = [
+                            'type' => 'flag',
+                            'code' => $piece['value'],
+                            'bold' => $bold,
+                            'italic' => $italic,
+                            'color' => $color,
+                            'break' => $isFirst && $pi > 0 && $wi === 0,
+                            'glue' => !$isFirst,
+                            'link' => null,
+                        ];
+                    } elseif ($piece['value'] !== '') {
+                        // Convert to the font's native CP1252 encoding right
+                        // away, so every later width measurement (word-wrap,
+                        // shrink-to-fit) is computed on the exact same bytes
+                        // that get drawn - mixing UTF-8 measurements with
+                        // CP1252 drawing produces mismatched cell widths
+                        // (visible as stray extra spacing after accented
+                        // words).
+                        $words[] = [
+                            'type' => 'text',
+                            'text' => $this->txt($piece['value']),
+                            'bold' => $bold,
+                            'italic' => $italic,
+                            'color' => $color,
+                            'break' => $isFirst && $pi > 0 && $wi === 0,
+                            'glue' => !$isFirst,
+                            'link' => null,
+                        ];
+                    }
+                }
             }
         }
 
         return $words;
+    }
+
+    /**
+     * Splits a whitespace-free token into an ordered list of
+     * ['type' => 'text'|'flag', 'value' => ...] pieces, extracting any
+     * regional-indicator flag-emoji pair (e.g. \u{1F1FA}\u{1F1F8} = "US") found inside it -
+     * even when glued directly to punctuation, like "\u{1F1FA}\u{1F1F8},".
+     * A 'flag' piece's value is the resulting 2-letter country code.
+     *
+     * @return array<int,array{type:string,value:string}>
+     */
+    private function splitFlagPieces(string $token): array
+    {
+        $parts = preg_split(
+            '/([\x{1F1E6}-\x{1F1FF}]{2})/u',
+            $token,
+            -1,
+            PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
+        );
+
+        if ($parts === false) {
+            return [['type' => 'text', 'value' => $token]];
+        }
+
+        $pieces = [];
+        foreach ($parts as $part) {
+            if (preg_match('/^[\x{1F1E6}-\x{1F1FF}]{2}$/u', $part) === 1) {
+                $pieces[] = ['type' => 'flag', 'value' => $this->flagCodeFromEmoji($part)];
+            } else {
+                $pieces[] = ['type' => 'text', 'value' => $part];
+            }
+        }
+
+        return $pieces;
+    }
+
+    /**
+     * Decodes a two-codepoint regional-indicator flag emoji (e.g.
+     * \u{1F1EB}\u{1F1F7}) into its 2-letter country code ("FR").
+     */
+    private function flagCodeFromEmoji(string $pair): string
+    {
+        $letters = '';
+
+        foreach (mb_str_split($pair, 1, 'UTF-8') ?: [] as $char) {
+            $bytes = array_map('ord', str_split($char));
+            if (count($bytes) === 4) {
+                $codepoint = (($bytes[0] & 0x07) << 18)
+                    | (($bytes[1] & 0x3F) << 12)
+                    | (($bytes[2] & 0x3F) << 6)
+                    | ($bytes[3] & 0x3F);
+                $letters .= chr(ord('A') + ($codepoint - 0x1F1E6));
+            }
+        }
+
+        return $letters;
     }
 
     /**
@@ -591,13 +707,26 @@ final class CvPdfGenerator extends FPDF
         $words = $this->styledWords($label . ' :', true, false, self::C_ENTRY_DARK);
 
         if (is_array($value)) {
-            foreach ($value as $segment) {
-                $segWords = $this->styledWords((string) ($segment['text'] ?? ''), false, false, self::C_VALUE_BLUE);
+            foreach ($value as $si => $segment) {
+                $segText = (string) ($segment['text'] ?? '');
+                $segWords = $this->styledWords($segText, false, false, self::C_VALUE_BLUE);
                 $link = $segment['link'] ?? null;
+
                 foreach ($segWords as &$w) {
                     $w['link'] = $link;
                 }
                 unset($w);
+
+                // A segment continues a sentence, it doesn't start a new
+                // one. If it begins with punctuation that conventionally
+                // has no space before it (a comma, a closing parenthesis,
+                // ...) - typically a "), " segment right after a link -
+                // glue its first word to the previous segment's last word
+                // instead of inserting the usual space between words.
+                if ($si > 0 && $segWords !== [] && preg_match('/^[,.;:!?)]/', ltrim($segText)) === 1) {
+                    $segWords[0]['glue'] = true;
+                }
+
                 $words = array_merge($words, $segWords);
             }
         } else {
@@ -623,15 +752,24 @@ final class CvPdfGenerator extends FPDF
 
         $this->applyFont(false, false, $fontSizePt);
         $spaceWidth = $this->GetStringWidth(' ');
+        $flagWidth = self::FLAG_NATIVE_W_PX * self::PX_TO_MM_96DPI;
 
         foreach ($words as $w) {
             $bold = $forceBold ?? $w['bold'];
             $italic = $forceItalic ?? $w['italic'];
-            $this->applyFont($bold, $italic, $fontSizePt);
-            $wordWidth = $this->GetStringWidth($w['text']);
+            $isFlag = ($w['type'] ?? 'text') === 'flag';
+            $glue = $w['glue'] ?? false;
 
-            $needsBreak = $w['break'] && $current !== [];
-            $addWidth = $wordWidth + ($current !== [] ? $spaceWidth : 0.0);
+            if ($isFlag) {
+                $wordWidth = $flagWidth;
+            } else {
+                $this->applyFont($bold, $italic, $fontSizePt);
+                $wordWidth = $this->GetStringWidth($w['text']);
+            }
+
+            $needsBreak = ($w['break'] ?? false) && $current !== [];
+            $spaceBefore = ($current !== [] && !$glue) ? $spaceWidth : 0.0;
+            $addWidth = $wordWidth + $spaceBefore;
 
             if ($current !== [] && ($needsBreak || $currentWidth + $addWidth > $maxWidth)) {
                 $lines[] = $current;
@@ -640,7 +778,20 @@ final class CvPdfGenerator extends FPDF
                 $addWidth = $wordWidth;
             }
 
-            $current[] = ['text' => $w['text'], 'bold' => $bold, 'italic' => $italic, 'color' => $w['color'], 'link' => $w['link']];
+            $entry = [
+                'type' => $isFlag ? 'flag' : 'text',
+                'bold' => $bold,
+                'italic' => $italic,
+                'color' => $w['color'],
+                'link' => $w['link'] ?? null,
+                // A word can only be "glued" to whatever precedes it within
+                // the SAME line; a word that starts a fresh line never needs
+                // a leading space anyway.
+                'glue' => $current === [] ? false : $glue,
+            ];
+            $entry[$isFlag ? 'code' : 'text'] = $isFlag ? $w['code'] : $w['text'];
+
+            $current[] = $entry;
             $currentWidth += $addWidth;
         }
 
@@ -657,19 +808,46 @@ final class CvPdfGenerator extends FPDF
      */
     private function drawStyledLines(array $lines, float $x, float $y, float $lineHeight, float $fontSizePt, bool $draw, bool $underline = false): float
     {
+        $flagW = self::FLAG_NATIVE_W_PX * self::PX_TO_MM_96DPI;
+        $flagH = self::FLAG_NATIVE_H_PX * self::PX_TO_MM_96DPI;
+
         foreach ($lines as $line) {
             if ($draw) {
+                $this->applyFont(false, false, $fontSizePt);
+                $spaceWidth = $this->GetStringWidth(' ');
+
                 $cx = $x;
+                $n = count($line);
                 foreach ($line as $i => $w) {
-                    $style = ($w['bold'] ? 'B' : '') . ($w['italic'] ? 'I' : '') . ($underline ? 'U' : '');
-                    $this->SetFont('Arial', $style, $fontSizePt);
-                    $this->SetTextColor(...$w['color']);
-                    $suffix = $i < count($line) - 1 ? ' ' : '';
-                    $text = $w['text'] . $suffix;
-                    $w2 = $this->GetStringWidth($text);
-                    $this->SetXY($cx, $y);
-                    $this->Cell($w2, $lineHeight, $text, 0, 0, '', false, $w['link'] ?? '');
-                    $cx += $w2;
+                    $nextGlued = $i < $n - 1 && ($line[$i + 1]['glue'] ?? false);
+                    $trailingSpace = ($i < $n - 1 && !$nextGlued) ? $spaceWidth : 0.0;
+
+                    if (($w['type'] ?? 'text') === 'flag') {
+                        $flagY = $y + ($lineHeight - $flagH) / 2;
+                        $this->drawFlag($w['code'], $cx, $flagY, $flagW, $flagH, $flagW, $flagH);
+                        if (!empty($w['link'])) {
+                            $this->Link($cx, $flagY, $flagW, $flagH, $w['link']);
+                        }
+                        $cx += $flagW + $trailingSpace;
+                    } else {
+                        $style = ($w['bold'] ? 'B' : '') . ($w['italic'] ? 'I' : '') . ($underline ? 'U' : '');
+                        $this->SetFont('Arial', $style, $fontSizePt);
+                        $this->SetTextColor(...$w['color']);
+                        $text = $w['text'];
+                        $w2 = $this->GetStringWidth($text);
+                        // Text() places the string at an exact baseline with
+                        // no implicit left padding, unlike Cell() (which
+                        // insets text by cMargin) - that padding cancels out
+                        // between two Cell()-drawn words, but not between a
+                        // Cell() word and an Image()-drawn flag, which was
+                        // leaving a stray gap right after every flag.
+                        $baseline = $y + 0.5 * $lineHeight + 0.3 * $this->FontSize;
+                        $this->Text($cx, $baseline, $text);
+                        if (!empty($w['link'])) {
+                            $this->Link($cx, $y, $w2, $lineHeight, $w['link']);
+                        }
+                        $cx += $w2 + $trailingSpace;
+                    }
                 }
             }
             $y += $lineHeight;

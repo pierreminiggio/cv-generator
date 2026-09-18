@@ -183,7 +183,10 @@ return [
             ['label' => 'Dev', 'value' => 'Side projects, examples : Built a web video editing software, Web scraping, APIs'],
             ['label' => 'Social Medias', 'value' => 'Building Youtube channels, Managing a dev community : "Les codeurs nomades" (FB)'],
             ['label' => 'Music', 'value' => 'Guitar, Bass, Music Production'],
-            ['label' => 'Languages', 'value' => 'Taught myself US, currently learning other languages : ES, CN, KE'],
+            // Flag emoji anywhere in a text field are automatically replaced
+            // by the matching flag image (see CvPdfGenerator::styledWords()) -
+            // no special data format needed, just type the emoji.
+            ['label' => 'Languages', 'value' => "Taught myself \u{1F1FA}\u{1F1F8}, currently learning other languages : \u{1F1EA}\u{1F1F8}, \u{1F1E8}\u{1F1F3}, \u{1F1F0}\u{1F1EA}"],
         ],
     ],
 ];
