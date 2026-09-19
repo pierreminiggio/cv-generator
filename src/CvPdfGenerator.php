@@ -34,6 +34,8 @@ final class CvPdfGenerator extends FPDF
     private const CONTENT_W = self::PAGE_W - self::MARGIN_L - self::MARGIN_R; // 198
 
     private const HEADER_H = 36.0;
+    private const HEADER_PAD_Y = 7.0; // gap from the header box's top/bottom border to its content
+    private const HEADER_PAD_X = self::HEADER_PAD_Y / 2; // left/right padding: half the top/bottom one
     private const PHOTO_SIZE = 26.0;
     private const GAP_HEADER_TO_SKILLS = 6.0;
 
@@ -136,8 +138,8 @@ final class CvPdfGenerator extends FPDF
         $rowTop = $skillsBottom + self::DIVIDER_GAP_ABOVE + self::DIVIDER_GAP_BELOW;
         $available = self::PAGE_H - self::MARGIN_BOTTOM - $rowTop;
 
-        $gapSteps = [7.0, 6.0, 5.0, 4.0, 3.2, 2.6, 2.0];
-        $lineGapSteps = [0.9, 0.8, 0.6, 0.5, 0.4, 0.3, 0.3];
+        $gapSteps = [7.0, 6.0, 5.0, 4.0, 3.2, 2.6, 2.0, 1.5, 1.0];
+        $lineGapSteps = [0.9, 0.8, 0.6, 0.5, 0.4, 0.3, 0.3, 0.2, 0.15];
 
         $expBottom = $eduBottom = PHP_FLOAT_MAX;
 
@@ -191,8 +193,8 @@ final class CvPdfGenerator extends FPDF
         $this->SetLineWidth(self::DIVIDER_LINE_WIDTH);
         $this->Rect($x0, $y0, $boxW, self::HEADER_H);
 
-        $textX = self::MARGIN_L;
-        $y = $y0 + 7.0;
+        $textX = $x0 + self::HEADER_PAD_X;
+        $y = $y0 + self::HEADER_PAD_Y;
 
         $this->SetTextColor(...self::C_HEADING);
         $this->applyFont(true, false, self::FS_TITLE);
@@ -224,7 +226,7 @@ final class CvPdfGenerator extends FPDF
         }
 
         // Photo, top right corner of the header box.
-        $photoX = self::PAGE_W - self::MARGIN_R - self::PHOTO_SIZE;
+        $photoX = ($x0 + $boxW) - self::HEADER_PAD_X - self::PHOTO_SIZE;
         $photoY = $y0 + (self::HEADER_H - self::PHOTO_SIZE) / 2;
         $photoPath = $this->data['photo'] ?? null;
 
