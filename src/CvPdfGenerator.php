@@ -734,6 +734,12 @@ final class CvPdfGenerator extends FPDF
         }
 
         $words = [];
+        // A "\n" at the very end of a segment's text has no following word
+        // *within that same segment* to carry the forced-line-break flag,
+        // so the break would otherwise be silently lost at the boundary.
+        // Remember it here and apply it to the next segment's first word
+        // instead.
+        $pendingBreak = false;
 
         foreach ($value as $si => $segment) {
             $segText = (string) ($segment['text'] ?? '');
@@ -745,14 +751,24 @@ final class CvPdfGenerator extends FPDF
             }
             unset($w);
 
-            // A segment continues a sentence, it doesn't start a new one.
-            // If it begins with punctuation that conventionally has no
-            // space before it (a comma, a closing parenthesis, ...) -
-            // typically a ", " segment right after a link - glue its first
-            // word to the previous segment's last word instead of
-            // inserting the usual space between words.
-            if ($si > 0 && $segWords !== [] && preg_match('/^[,.;:!?)]/', ltrim($segText)) === 1) {
-                $segWords[0]['glue'] = true;
+            if ($segWords !== []) {
+                if ($pendingBreak) {
+                    $segWords[0]['break'] = true;
+                    $segWords[0]['glue'] = false;
+                } elseif ($si > 0 && preg_match('/^[,.;:!?)]/', ltrim($segText)) === 1) {
+                    // A segment continues a sentence, it doesn't start a new
+                    // one. If it begins with punctuation that conventionally
+                    // has no space before it (a comma, a closing parenthesis,
+                    // ...) - typically a ", " segment right after a link -
+                    // glue its first word to the previous segment's last word
+                    // instead of inserting the usual space between words.
+                    $segWords[0]['glue'] = true;
+                }
+                $pendingBreak = false;
+            }
+
+            if (preg_match('/\n\s*$/', $segText) === 1) {
+                $pendingBreak = true;
             }
 
             $words = array_merge($words, $segWords);
@@ -843,9 +859,22 @@ final class CvPdfGenerator extends FPDF
 
                 $cx = $x;
                 $n = count($line);
+                // One entry per word: its drawn span and, for text words,
+                // the exact font metrics used - so a run of consecutive
+                // linked words can get ONE continuous underline afterwards
+                // (see drawLinkUnderlines()), instead of relying on FPDF's
+                // own per-word underline, which stops at each word's own
+                // glyphs and leaves visible gaps over the spaces between
+                // them.
+                $positions = [];
+
                 foreach ($line as $i => $w) {
                     $nextGlued = $i < $n - 1 && ($line[$i + 1]['glue'] ?? false);
                     $trailingSpace = ($i < $n - 1 && !$nextGlued) ? $spaceWidth : 0.0;
+                    $startX = $cx;
+                    $baseline = null;
+                    $up = null;
+                    $ut = null;
 
                     if (($w['type'] ?? 'text') === 'flag') {
                         $flagY = $y + ($lineHeight - $flagH) / 2;
@@ -853,33 +882,87 @@ final class CvPdfGenerator extends FPDF
                         if (!empty($w['link'])) {
                             $this->Link($cx, $flagY, $flagW, $flagH, $w['link']);
                         }
-                        $cx += $flagW + $trailingSpace;
+                        $cx += $flagW;
                     } else {
-                        $hasLink = !empty($w['link']);
-                        $style = ($w['bold'] ? 'B' : '') . ($w['italic'] ? 'I' : '') . (($underline || $hasLink) ? 'U' : '');
+                        $style = ($w['bold'] ? 'B' : '') . ($w['italic'] ? 'I' : '') . ($underline ? 'U' : '');
                         $this->SetFont('Arial', $style, $fontSizePt);
                         $this->SetTextColor(...$w['color']);
                         $text = $w['text'];
                         $w2 = $this->GetStringWidth($text);
+                        $baseline = $y + 0.5 * $lineHeight + 0.3 * $this->FontSize;
                         // Text() places the string at an exact baseline with
                         // no implicit left padding, unlike Cell() (which
                         // insets text by cMargin) - that padding cancels out
                         // between two Cell()-drawn words, but not between a
                         // Cell() word and an Image()-drawn flag, which was
                         // leaving a stray gap right after every flag.
-                        $baseline = $y + 0.5 * $lineHeight + 0.3 * $this->FontSize;
                         $this->Text($cx, $baseline, $text);
                         if (!empty($w['link'])) {
                             $this->Link($cx, $y, $w2, $lineHeight, $w['link']);
                         }
-                        $cx += $w2 + $trailingSpace;
+                        $up = $this->CurrentFont['up'] ?? -100;
+                        $ut = $this->CurrentFont['ut'] ?? 50;
+                        $cx += $w2;
                     }
+
+                    $positions[] = [
+                        'start' => $startX,
+                        'end' => $cx,
+                        'link' => $w['link'] ?? null,
+                        'color' => $w['color'],
+                        'baseline' => $baseline,
+                        'up' => $up,
+                        'ut' => $ut,
+                        'fontSizeUser' => $this->FontSize,
+                    ];
+
+                    $cx += $trailingSpace;
                 }
+
+                $this->drawLinkUnderlines($positions);
             }
             $y += $lineHeight;
         }
 
         return $y;
+    }
+
+    /**
+     * Draws one continuous underline per contiguous run of words that
+     * share the same link (spanning the gaps/spaces between them too),
+     * using the same position/thickness formula FPDF's own automatic
+     * underline uses internally, just applied to the whole run's width
+     * rather than one word at a time.
+     */
+    private function drawLinkUnderlines(array $positions): void
+    {
+        $n = count($positions);
+        $i = 0;
+
+        while ($i < $n) {
+            $link = $positions[$i]['link'];
+
+            if (empty($link) || $positions[$i]['baseline'] === null) {
+                $i++;
+                continue;
+            }
+
+            $j = $i;
+            while ($j + 1 < $n && ($positions[$j + 1]['link'] ?? null) === $link && $positions[$j + 1]['baseline'] !== null) {
+                $j++;
+            }
+
+            $p = $positions[$i];
+            $x1 = $p['start'];
+            $x2 = $positions[$j]['end'];
+            $yTop = $p['baseline'] - $p['up'] / 1000 * $p['fontSizeUser'];
+            $h = max($p['ut'] / 1000 * $p['fontSizeUser'], 0.15);
+
+            $this->SetFillColor(...$p['color']);
+            $this->Rect($x1, $yTop, $x2 - $x1, $h, 'F');
+
+            $i = $j + 1;
+        }
     }
 
     /**
