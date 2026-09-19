@@ -27,25 +27,29 @@ final class CvPdfGenerator extends FPDF
     // ---- Page geometry (mm) ----------------------------------------------
     private const PAGE_W = 210.0;
     private const PAGE_H = 297.0;
-    private const MARGIN_L = 12.0;
-    private const MARGIN_R = 12.0;
+    private const MARGIN_L = 6.0;
+    private const MARGIN_R = 6.0;
+    private const MARGIN_TOP = 6.0;
     private const MARGIN_BOTTOM = 7.0;
-    private const CONTENT_W = self::PAGE_W - self::MARGIN_L - self::MARGIN_R; // 186
+    private const CONTENT_W = self::PAGE_W - self::MARGIN_L - self::MARGIN_R; // 198
 
     private const HEADER_H = 36.0;
-    private const HEADER_BLEED = 4.0; // how far the grey banner extends past the content margins
     private const PHOTO_SIZE = 26.0;
     private const GAP_HEADER_TO_SKILLS = 6.0;
 
     private const COL_GAP_SKILLS = 8.0;
-    private const SKILLS_COL_W = (self::CONTENT_W - self::COL_GAP_SKILLS) / 2; // 89
+    private const SKILLS_COL_W = (self::CONTENT_W - self::COL_GAP_SKILLS) / 2;
 
     private const DIVIDER_GAP_ABOVE = 3.0;
     private const DIVIDER_GAP_BELOW = 3.0;
+    private const DIVIDER_LINE_WIDTH = 0.6; // also used for the header box border
 
     private const COL_GAP_EXP = 7.0;
-    private const EXP_COL_W = 103.0;
-    private const EDU_COL_W = self::CONTENT_W - self::COL_GAP_EXP - self::EXP_COL_W; // 76
+    // Keeps the original 103:76 experience/education proportions regardless
+    // of CONTENT_W, instead of hard-coding absolute widths.
+    private const EXP_EDU_RATIO = 103.0 / 179.0;
+    private const EXP_COL_W = (self::CONTENT_W - self::COL_GAP_EXP) * self::EXP_EDU_RATIO;
+    private const EDU_COL_W = (self::CONTENT_W - self::COL_GAP_EXP) - self::EXP_COL_W;
 
     private const SECTION_HEADER_GAP = 3.0; // above & below "Work Experiences :" / "Education :"
 
@@ -63,13 +67,15 @@ final class CvPdfGenerator extends FPDF
     private const FREETIME_PAD = 2.5;
 
     // ---- Colours (RGB 0-255) ----------------------------------------------
-    private const C_HEADING      = [27, 63, 139];   // section headings, dividers, borders
-    private const C_ENTRY_DARK   = [20, 34, 79];    // entry titles / "what was done"
-    private const C_VALUE_BLUE   = [46, 111, 217];  // skill values / "skills used"
+    private const C_HEADING      = [27, 63, 139];   // section headings text
+    private const C_ENTRY_DARK   = [20, 34, 79];    // "what was done" / "skills used" (dark side)
+    private const C_VALUE_BLUE   = [46, 111, 217];  // skill values / "skills used" (light side)
+    private const C_EDU_CONTENT  = [33, 73, 148];   // education descriptions: halfway between the two above
     private const C_LOGO_FILL    = [207, 216, 234];
     private const C_TEXT_DEFAULT = [20, 20, 20];
     private const C_GRAD_START   = [197, 202, 209]; // header banner: darker grey
     private const C_GRAD_END     = [231, 233, 236]; // header banner: lighter grey (never pure white)
+    private const C_DARK_GREY    = [90, 90, 90];    // header box border + section dividers
 
     // ---- Font sizes (pt) ---------------------------------------------------
     private const FS_TITLE           = 22.0;
@@ -111,7 +117,7 @@ final class CvPdfGenerator extends FPDF
         $this->AddPage();
         $this->drawHeader();
 
-        $skillsBottom = $this->drawSkills(self::HEADER_H + self::GAP_HEADER_TO_SKILLS, true);
+        $skillsBottom = $this->drawSkills(self::MARGIN_TOP + self::HEADER_H + self::GAP_HEADER_TO_SKILLS, true);
         $dividerY = $skillsBottom + self::DIVIDER_GAP_ABOVE;
         $this->drawDivider($dividerY);
         $rowTop = $dividerY + self::DIVIDER_GAP_BELOW;
@@ -126,7 +132,7 @@ final class CvPdfGenerator extends FPDF
 
     private function fitContent(): void
     {
-        $skillsBottom = $this->drawSkills(self::HEADER_H + self::GAP_HEADER_TO_SKILLS, false);
+        $skillsBottom = $this->drawSkills(self::MARGIN_TOP + self::HEADER_H + self::GAP_HEADER_TO_SKILLS, false);
         $rowTop = $skillsBottom + self::DIVIDER_GAP_ABOVE + self::DIVIDER_GAP_BELOW;
         $available = self::PAGE_H - self::MARGIN_BOTTOM - $rowTop;
 
@@ -166,24 +172,27 @@ final class CvPdfGenerator extends FPDF
 
     private function drawHeader(): void
     {
-        $x0 = -self::HEADER_BLEED;
-        $bannerW = self::PAGE_W + 2 * self::HEADER_BLEED;
+        $x0 = self::MARGIN_L;
+        $y0 = self::MARGIN_TOP;
+        $boxW = self::CONTENT_W;
         $slices = 120;
-        $sliceW = $bannerW / $slices;
+        $sliceW = $boxW / $slices;
 
         for ($i = 0; $i < $slices; $i++) {
             $t = $i / ($slices - 1);
             $color = $this->lerpColor(self::C_GRAD_START, self::C_GRAD_END, $t);
             $this->SetFillColor($color[0], $color[1], $color[2]);
-            $this->Rect($x0 + $i * $sliceW, 0, $sliceW + 0.3, self::HEADER_H, 'F');
+            $this->Rect($x0 + $i * $sliceW, $y0, $sliceW + 0.3, self::HEADER_H, 'F');
         }
 
-        $this->SetDrawColor(...self::C_HEADING);
-        $this->SetLineWidth(1.0);
-        $this->Line($x0, self::HEADER_H, $x0 + $bannerW, self::HEADER_H);
+        // A contained box (not bleeding past the page margins), bordered at
+        // the same weight as the section dividers.
+        $this->SetDrawColor(...self::C_DARK_GREY);
+        $this->SetLineWidth(self::DIVIDER_LINE_WIDTH);
+        $this->Rect($x0, $y0, $boxW, self::HEADER_H);
 
         $textX = self::MARGIN_L;
-        $y = 7.0;
+        $y = $y0 + 7.0;
 
         $this->SetTextColor(...self::C_HEADING);
         $this->applyFont(true, false, self::FS_TITLE);
@@ -214,9 +223,9 @@ final class CvPdfGenerator extends FPDF
             $this->Cell($this->GetStringWidth($websiteTxt), 5.0, $websiteTxt, 0, 0, '', false, $websiteUrl);
         }
 
-        // Photo, top right corner of the header.
+        // Photo, top right corner of the header box.
         $photoX = self::PAGE_W - self::MARGIN_R - self::PHOTO_SIZE;
-        $photoY = (self::HEADER_H - self::PHOTO_SIZE) / 2;
+        $photoY = $y0 + (self::HEADER_H - self::PHOTO_SIZE) / 2;
         $photoPath = $this->data['photo'] ?? null;
 
         if ($photoPath && is_file($photoPath)) {
@@ -279,7 +288,7 @@ final class CvPdfGenerator extends FPDF
                 }
             } else {
                 foreach (($block['lines'] ?? []) as $line) {
-                    $words = $this->skillLineWords((string) ($line['label'] ?? ''), (string) ($line['value'] ?? ''));
+                    $words = $this->skillLineWords((string) ($line['label'] ?? ''), $line['value'] ?? '');
                     $wrapped = $this->wrapStyled($words, $width, self::FS_SKILL);
                     $lh = $this->lineHeightFor(self::FS_SKILL);
                     $y = $this->drawStyledLines($wrapped, $x, $y, $lh, self::FS_SKILL, $draw);
@@ -326,8 +335,8 @@ final class CvPdfGenerator extends FPDF
 
     private function drawDivider(float $y): void
     {
-        $this->SetDrawColor(...self::C_HEADING);
-        $this->SetLineWidth(0.6);
+        $this->SetDrawColor(...self::C_DARK_GREY);
+        $this->SetLineWidth(self::DIVIDER_LINE_WIDTH);
         $this->Line(self::MARGIN_L, $y, self::MARGIN_L + self::CONTENT_W, $y);
     }
 
@@ -391,8 +400,8 @@ final class CvPdfGenerator extends FPDF
     {
         $h = $this->layoutFreetime($x, $y, $width, false);
 
-        $this->SetDrawColor(...self::C_HEADING);
-        $this->SetLineWidth(0.6);
+        $this->SetDrawColor(...self::C_DARK_GREY);
+        $this->SetLineWidth(self::DIVIDER_LINE_WIDTH);
         $this->Line($x, $y, $x + $width, $y);           // top border
         $this->Line($x, $y, $x, $y + $h);                // left border
 
@@ -408,10 +417,7 @@ final class CvPdfGenerator extends FPDF
         $y = $this->drawSectionHeading((string) ($freetime['heading'] ?? ''), $x, $y, $width, $draw, false);
 
         foreach (($freetime['lines'] ?? []) as $line) {
-            $words = $this->skillLineWords(
-                (string) ($line['label'] ?? ''),
-                $line['value_segments'] ?? (string) ($line['value'] ?? '')
-            );
+            $words = $this->skillLineWords((string) ($line['label'] ?? ''), $line['value'] ?? '');
             $wrapped = $this->wrapStyled($words, $width, self::FS_SKILL);
             $lh = $this->lineHeightFor(self::FS_SKILL);
             $y = $this->drawStyledLines($wrapped, $x, $y, $lh, self::FS_SKILL, $draw);
@@ -455,27 +461,27 @@ final class CvPdfGenerator extends FPDF
         }
 
         if ($isEducation) {
-            $content = (string) ($entry['content'] ?? '');
-            if ($content !== '') {
+            $content = $entry['content'] ?? '';
+            if (!empty($content)) {
                 $y += $this->lineGap;
-                $words = $this->styledWords($content, false, true, self::C_ENTRY_DARK);
+                $words = $this->styledWordsFromValue($content, false, true, self::C_EDU_CONTENT);
                 $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_BODY);
                 $lh2 = $this->lineHeightFor(self::FS_ENTRY_BODY);
                 $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, self::FS_ENTRY_BODY, $draw);
             }
         } else {
-            $did = (string) ($entry['did'] ?? '');
-            if ($did !== '') {
+            $did = $entry['did'] ?? '';
+            if (!empty($did)) {
                 $y += $this->lineGap;
-                $words = $this->styledWords($did, false, false, self::C_ENTRY_DARK);
+                $words = $this->styledWordsFromValue($did, false, false, self::C_ENTRY_DARK);
                 $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_BODY);
                 $lh2 = $this->lineHeightFor(self::FS_ENTRY_BODY);
                 $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, self::FS_ENTRY_BODY, $draw);
             }
-            $used = (string) ($entry['used'] ?? '');
-            if ($used !== '') {
+            $used = $entry['used'] ?? '';
+            if (!empty($used)) {
                 $y += $this->lineGap;
-                $words = $this->styledWords($used, false, true, self::C_VALUE_BLUE);
+                $words = $this->styledWordsFromValue($used, false, true, self::C_VALUE_BLUE);
                 $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_BODY);
                 $lh2 = $this->lineHeightFor(self::FS_ENTRY_BODY);
                 $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, self::FS_ENTRY_BODY, $draw);
@@ -706,31 +712,48 @@ final class CvPdfGenerator extends FPDF
     {
         $words = $this->styledWords($label . ' :', true, false, self::C_ENTRY_DARK);
 
-        if (is_array($value)) {
-            foreach ($value as $si => $segment) {
-                $segText = (string) ($segment['text'] ?? '');
-                $segWords = $this->styledWords($segText, false, false, self::C_VALUE_BLUE);
-                $link = $segment['link'] ?? null;
+        return array_merge($words, $this->styledWordsFromValue($value, false, false, self::C_VALUE_BLUE));
+    }
 
-                foreach ($segWords as &$w) {
-                    $w['link'] = $link;
-                }
-                unset($w);
+    /**
+     * Builds a styled-word list for any text field that may either be a
+     * plain string, or an array of ['text' => ..., 'link' => ?string]
+     * segments used to turn part of the text into a hyperlink (see
+     * styledWords() for the plain-string case, used directly here). This
+     * is the single mechanism behind every linkable field in the CV: skill
+     * values, freetime lines, and each entry's "did"/"used"/"content".
+     *
+     * @param string|array<int,array{text:string,link?:?string}> $value
+     */
+    private function styledWordsFromValue($value, bool $bold, bool $italic, array $color): array
+    {
+        if (!is_array($value)) {
+            return $this->styledWords((string) $value, $bold, $italic, $color);
+        }
 
-                // A segment continues a sentence, it doesn't start a new
-                // one. If it begins with punctuation that conventionally
-                // has no space before it (a comma, a closing parenthesis,
-                // ...) - typically a "), " segment right after a link -
-                // glue its first word to the previous segment's last word
-                // instead of inserting the usual space between words.
-                if ($si > 0 && $segWords !== [] && preg_match('/^[,.;:!?)]/', ltrim($segText)) === 1) {
-                    $segWords[0]['glue'] = true;
-                }
+        $words = [];
 
-                $words = array_merge($words, $segWords);
+        foreach ($value as $si => $segment) {
+            $segText = (string) ($segment['text'] ?? '');
+            $segWords = $this->styledWords($segText, $bold, $italic, $color);
+            $link = $segment['link'] ?? null;
+
+            foreach ($segWords as &$w) {
+                $w['link'] = $link;
             }
-        } else {
-            $words = array_merge($words, $this->styledWords((string) $value, false, false, self::C_VALUE_BLUE));
+            unset($w);
+
+            // A segment continues a sentence, it doesn't start a new one.
+            // If it begins with punctuation that conventionally has no
+            // space before it (a comma, a closing parenthesis, ...) -
+            // typically a ", " segment right after a link - glue its first
+            // word to the previous segment's last word instead of
+            // inserting the usual space between words.
+            if ($si > 0 && $segWords !== [] && preg_match('/^[,.;:!?)]/', ltrim($segText)) === 1) {
+                $segWords[0]['glue'] = true;
+            }
+
+            $words = array_merge($words, $segWords);
         }
 
         return $words;
@@ -830,7 +853,8 @@ final class CvPdfGenerator extends FPDF
                         }
                         $cx += $flagW + $trailingSpace;
                     } else {
-                        $style = ($w['bold'] ? 'B' : '') . ($w['italic'] ? 'I' : '') . ($underline ? 'U' : '');
+                        $hasLink = !empty($w['link']);
+                        $style = ($w['bold'] ? 'B' : '') . ($w['italic'] ? 'I' : '') . (($underline || $hasLink) ? 'U' : '');
                         $this->SetFont('Arial', $style, $fontSizePt);
                         $this->SetTextColor(...$w['color']);
                         $text = $w['text'];

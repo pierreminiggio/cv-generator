@@ -60,10 +60,16 @@ re-downloading them.
 The array shape is documented with inline comments at the top of
 `cv_example.php`. A few things worth knowing:
 
-- Any `title` / `did` / `content` string can contain a literal `\n` to
-  force a line break exactly where you want one (e.g. to put a course
-  name and its school on two separate lines). Without one, text just
-  wraps automatically to fit the column.
+- Any `title` / `did` / `used` / `content` / freetime `value` string can
+  contain a literal newline to force a line break exactly where you want
+  one (e.g. to put a course name and its school on two separate lines).
+  Without one, text just wraps automatically to fit the column. **This
+  must be a real newline, not the two characters `\n`** - which only
+  happens automatically in a PHP string written with double quotes (or a
+  heredoc). `"Line one\nLine two"` works; `'Line one\nLine two'` does not -
+  single quotes don't interpret `\n` at all, so it stays as a literal
+  backslash-n and prints as such. If you need to keep single quotes for
+  some reason, write `'Line one' . "\n" . 'Line two'` instead.
 - One experience entry can be marked `'force_one_line' => true` (see the
   SantéVet entry in the example) to force its title onto a single line -
   the generator automatically shrinks that title's font just enough to
@@ -77,18 +83,40 @@ The array shape is documented with inline comments at the top of
   semantic-ui-flag's `flag.min.css`) if you add more languages. Any code
   without a known position - or if the sprite can't be downloaded - falls
   back to a plain badge showing the code itself.
-- `freetime` lines accept a `value_segments` array instead of a plain
-  `value` string if you want part of the line to be a clickable link (see
-  how `cv_example.php` could be extended for the "Built a web video
-  editing software" / "Web scraping, APIs" links from the original CV):
+- A flag emoji (🇫🇷, 🇺🇸, 🇪🇸, 🇨🇳, 🇰🇪, ...) typed directly into **any**
+  text field is automatically replaced by that same flag image - even
+  glued to punctuation, e.g. `"...🇺🇸, currently..."`. Only the 5 codes
+  above have an actual flag image; any other flag emoji falls back to its
+  2-letter code badge, same as the `code` field above.
+- **Any of those same fields - skill `value`, freetime `value`, an
+  entry's `did`/`used`/`content` - can turn part of their text into a
+  clickable link.** Instead of a plain string, give an array of
+  segments, each with a `text` and an optional `link`:
   ```php
-  'value_segments' => [
-      ['text' => 'Side projects, examples : '],
-      ['text' => 'Built a web video editing software', 'link' => 'https://…'],
-      ['text' => ', '],
-      ['text' => 'Web scraping, APIs', 'link' => 'https://github.com/…'],
+  'did' => [
+      ['text' => 'Rebuilt the internal '],
+      ['text' => 'reporting dashboard', 'link' => 'https://example.com/case-study'],
+      ['text' => ' from scratch.'],
   ],
   ```
+  A segment without `link` (or with `link => null`) is drawn like normal
+  text; a segment with `link` gets the exact same colour/weight/style as
+  the surrounding text, with an underline added so it reads as a link.
+  This is what you'd use for the freetime "Built a web video editing
+  software" / "Web scraping, APIs" links, or for a specific project
+  mentioned in a job's `did`:
+  ```php
+  'value' => [
+      ['text' => 'Side projects, examples : '],
+      ['text' => 'Built a web video editing software', 'link' => 'https://twitter.com/PierreMiniggio/status/1409875579181142020'],
+      ['text' => ', '],
+      ['text' => 'Web scraping, APIs', 'link' => 'https://github.com/pierreminiggio'],
+  ],
+  ```
+  Note on "open in a new tab": that's not something a PDF file can force -
+  unlike an HTML `target="_blank"`, a PDF link's behaviour (same tab, new
+  tab, downloads, ...) is entirely up to whatever PDF viewer/browser the
+  reader is using, with no setting in the file itself to control it.
 
 ## How the "fits on one page, guaranteed" part works
 
