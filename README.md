@@ -18,21 +18,24 @@ vendored under `src/Fpdf/`).
 
 ```
 .
-├── .htaccess              Routes every request to public/index.php
+├── .htaccess              Routes every request to public/index.php (and /favicon.ico to public/favicon.php)
 ├── cv_example.php         Example data (safe to commit - delivered as-is)
 ├── cv.php                 YOUR data - not delivered, git-ignored (see below)
-├── cv_image.png           Photo shown top-right on the CV
+├── cv_image.png           Photo shown top-right on the CV, and used as the browser-tab favicon
 ├── public/
-│   └── index.php          Front controller: loads the data, builds and streams the PDF
+│   ├── index.php          Front controller: loads the data, builds and streams the PDF
+│   └── favicon.php        Serves /favicon.ico, built from cv_image.png
 ├── src/
 │   ├── CvData.php         Picks cv.php if present, else cv_example.php
 │   ├── CvPdfGenerator.php All the layout/drawing logic
 │   ├── LogoCache.php      Downloads + locally caches the remote logo images
 │   ├── FlagSpriteCache.php Downloads + crops + caches the language flag sprite
+│   ├── FaviconBuilder.php Crops cv_image.png into a small multi-size .ico, cached on disk
 │   └── Fpdf/               Vendored FPDF 1.9 (fpdf.php + core font metrics + license)
 └── cache/
     ├── logos/              Downloaded logo cache (git-ignored, auto-created)
-    └── flags/              Downloaded/cropped flag cache (git-ignored, auto-created)
+    ├── flags/              Downloaded/cropped flag cache (git-ignored, auto-created)
+    └── favicon.ico          Generated favicon (git-ignored, auto-created)
 ```
 
 ## Getting started
@@ -48,12 +51,20 @@ vendored under `src/Fpdf/`).
    the file the app actually "pulls from"; `cv_example.php` is only the
    fallback/example and is what gets used if you haven't created `cv.php`
    yet.
-3. Visit the site. The PDF is streamed inline by default; add
+3. Make sure `cache/` (and its subfolders) is writable by whatever user
+   your web server runs PHP as (often `www-data`) - e.g.
+   `chmod -R 775 cache && chown -R www-data:www-data cache`, adjusted to
+   your setup. This is what lets the logo/flag/favicon caches actually
+   get written; if the directory isn't writable, nothing breaks visibly
+   for logos/flags (they just fall back to a placeholder, as designed),
+   but the favicon will silently 404 since a browser's automatic
+   `/favicon.ico` request has nothing sensible to fall back to.
+4. Visit the site. The PDF is streamed inline by default; add
    `?download=1` to the URL to force a "Save As" download instead.
 
 The very first request will download and cache every logo image under
-`cache/logos/`; later requests reuse those cached files instead of
-re-downloading them.
+`cache/logos/`, and build `cache/favicon.ico` from your photo; later
+requests reuse those cached files instead of rebuilding them.
 
 ## Editing your data (`cv.php`)
 
@@ -167,3 +178,11 @@ the upstream repository were left out.
   Western-European text; characters outside that encoding (e.g. Chinese,
   Cyrillic) would need an embedded Unicode (TTF) font instead of the
   built-in core fonts, which is a bigger change than this project needed.
+- The favicon (`public/favicon.php`) relies on browsers automatically
+  requesting `/favicon.ico` for whatever domain a page (including a PDF
+  opened directly in a tab) is served from - a real, widely-supported
+  browser behaviour, not something embedded in the PDF file itself. A PDF
+  file has no way to set its own tab icon or force it open in a new tab
+  (see the note further up about links always opening in the same tab) -
+  both are entirely up to the viewer/browser showing it, with nothing in
+  the file format to override that.

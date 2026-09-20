@@ -18,6 +18,11 @@
     RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
     RewriteRule ^ - [L]
 
+    # Browsers request this automatically for every site, including when a
+    # PDF is opened directly in a tab - route it to its own small script
+    # (built from the CV's photo) instead of the CV front controller.
+    RewriteRule ^favicon\.ico$ public/favicon.php [L]
+
     # Everything else is handled by the front controller.
     RewriteRule ^ public/index.php [L]
 </IfModule>
@@ -25,7 +30,8 @@
 # If mod_rewrite isn't available, fall back to a plain redirect so the
 # CV is still reachable (this DOES change the URL, unlike the rule above).
 <IfModule !mod_rewrite.c>
-    RedirectMatch 302 ^/(?!public/index\.php).*$ /public/index.php
+    RedirectMatch 302 ^/favicon\.ico$ /public/favicon.php
+    RedirectMatch 302 ^/(?!public/(index|favicon)\.php).*$ /public/index.php
 </IfModule>
 
 # Never serve these directly, even if something bypasses the rewrite above.

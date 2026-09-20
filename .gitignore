@@ -11,6 +11,9 @@
 /cache/flags/*
 !/cache/flags/.gitkeep
 
+# Generated favicon.ico, built from the CV photo (re-created automatically).
+/cache/favicon.ico
+
 # Generated PDF exports, if you ever save one to disk locally.
 *.pdf
 
