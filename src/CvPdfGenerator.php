@@ -97,6 +97,14 @@ final class CvPdfGenerator extends FPDF
     // Spacing "levers" tightened by fitContent() until everything fits.
     private float $entryGap = 7.0;  // vertical gap between two different entries
     private float $lineGap  = 0.9;  // gap between title/did/used (or title/content) lines
+    // Font sizes for entry titles/bodies: start at the normal sizes, only
+    // tightened by fitContent() as a last resort, after spacing alone no
+    // longer buys enough room - this matters most for languages whose text
+    // simply runs longer than English/French for the same content (word-
+    // for-word German, say), where tighter spacing eventually stops
+    // helping because the real problem is wrapped *line count*, not gaps.
+    private float $bodyFontSize  = self::FS_ENTRY_BODY;
+    private float $titleFontSize = self::FS_ENTRY_TITLE;
 
     public function __construct(array $data, LogoCache $logoCache, FlagSpriteCache $flagCache)
     {
@@ -138,14 +146,40 @@ final class CvPdfGenerator extends FPDF
         $rowTop = $skillsBottom + self::DIVIDER_GAP_ABOVE + self::DIVIDER_GAP_BELOW;
         $available = self::PAGE_H - self::MARGIN_BOTTOM - $rowTop;
 
-        $gapSteps = [7.0, 6.0, 5.0, 4.0, 3.2, 2.6, 2.0, 1.5, 1.0];
-        $lineGapSteps = [0.9, 0.8, 0.6, 0.5, 0.4, 0.3, 0.3, 0.2, 0.15];
+        // [entryGap, lineGap, bodyFontSize, titleFontSize], tried in order.
+        // The first tiers only tighten spacing, keeping the normal font
+        // sizes - that alone covers most content. Once spacing alone isn't
+        // enough, later tiers also trim the font size a little: that helps
+        // far more for a language whose text simply runs longer for the
+        // same content (French vs English, German more so still), since a
+        // smaller font also reduces how many lines things *wrap* onto, not
+        // just the gap between those lines.
+        $tiers = [
+            [7.0, 0.9, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [6.0, 0.8, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [5.0, 0.6, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [4.0, 0.5, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [3.2, 0.4, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [2.6, 0.3, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [2.0, 0.3, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [1.5, 0.2, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [1.0, 0.15, self::FS_ENTRY_BODY, self::FS_ENTRY_TITLE],
+            [1.0, 0.15, 7.9, 9.0],
+            [1.0, 0.15, 7.6, 8.8],
+            [1.0, 0.15, 7.3, 8.5],
+            [1.0, 0.15, 7.0, 8.2],
+            [1.0, 0.15, 6.8, 8.0],
+            [1.0, 0.15, 6.6, 7.8],
+            [1.0, 0.15, 6.4, 7.6],
+        ];
 
         $expBottom = $eduBottom = PHP_FLOAT_MAX;
 
-        foreach ($gapSteps as $i => $gap) {
+        foreach ($tiers as [$gap, $lineGap, $bodyFs, $titleFs]) {
             $this->entryGap = $gap;
-            $this->lineGap = $lineGapSteps[$i];
+            $this->lineGap = $lineGap;
+            $this->bodyFontSize = $bodyFs;
+            $this->titleFontSize = $titleFs;
 
             $expBottom = $this->drawExperiences($rowTop, false);
             $eduBottom = $this->drawEducationAndFreetime($rowTop, false);
@@ -160,8 +194,8 @@ final class CvPdfGenerator extends FPDF
 
         throw new RuntimeException(sprintf(
             'CV content does not fit on a single A4 page even at the tightest spacing ' .
-            '(experience column needs %.1fmm, education column needs %.1fmm, only %.1fmm available). ' .
-            'Please shorten some entries in cv.php.',
+            'and smallest font size (experience column needs %.1fmm, education column needs %.1fmm, ' .
+            'only %.1fmm available). Please shorten some entries in cv.php.',
             $expBottom - $rowTop,
             $eduBottom - $rowTop,
             $available
@@ -495,7 +529,7 @@ final class CvPdfGenerator extends FPDF
 
         if ($forceOneLine) {
             $flat = $this->txt(str_replace("\n", ' ', $title));
-            $size = $this->shrinkToFit($flat, $textWidth, self::FS_ENTRY_TITLE, self::FS_ENTRY_TITLE_MIN);
+            $size = $this->shrinkToFit($flat, $textWidth, $this->titleFontSize, self::FS_ENTRY_TITLE_MIN);
             $lh = $this->lineHeightFor($size);
             if ($draw) {
                 $this->applyFont(true, false, $size);
@@ -507,9 +541,9 @@ final class CvPdfGenerator extends FPDF
             $y += $lh;
         } else {
             $words = $this->styledWords($title, true, false, self::C_TEXT_DEFAULT);
-            $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_TITLE);
-            $lh = $this->lineHeightFor(self::FS_ENTRY_TITLE);
-            $y = $this->drawStyledLines($wrapped, $textX, $y, $lh, self::FS_ENTRY_TITLE, $draw);
+            $wrapped = $this->wrapStyled($words, $textWidth, $this->titleFontSize);
+            $lh = $this->lineHeightFor($this->titleFontSize);
+            $y = $this->drawStyledLines($wrapped, $textX, $y, $lh, $this->titleFontSize, $draw);
         }
 
         if ($isEducation) {
@@ -517,26 +551,26 @@ final class CvPdfGenerator extends FPDF
             if (!empty($content)) {
                 $y += $this->lineGap;
                 $words = $this->styledWordsFromValue($content, false, true, self::C_EDU_CONTENT);
-                $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_BODY);
-                $lh2 = $this->lineHeightFor(self::FS_ENTRY_BODY);
-                $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, self::FS_ENTRY_BODY, $draw);
+                $wrapped = $this->wrapStyled($words, $textWidth, $this->bodyFontSize);
+                $lh2 = $this->lineHeightFor($this->bodyFontSize);
+                $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, $this->bodyFontSize, $draw);
             }
         } else {
             $did = $entry['did'] ?? '';
             if (!empty($did)) {
                 $y += $this->lineGap;
                 $words = $this->styledWordsFromValue($did, false, false, self::C_ENTRY_DARK);
-                $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_BODY);
-                $lh2 = $this->lineHeightFor(self::FS_ENTRY_BODY);
-                $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, self::FS_ENTRY_BODY, $draw);
+                $wrapped = $this->wrapStyled($words, $textWidth, $this->bodyFontSize);
+                $lh2 = $this->lineHeightFor($this->bodyFontSize);
+                $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, $this->bodyFontSize, $draw);
             }
             $used = $entry['used'] ?? '';
             if (!empty($used)) {
                 $y += $this->lineGap;
                 $words = $this->styledWordsFromValue($used, false, true, self::C_VALUE_BLUE);
-                $wrapped = $this->wrapStyled($words, $textWidth, self::FS_ENTRY_BODY);
-                $lh2 = $this->lineHeightFor(self::FS_ENTRY_BODY);
-                $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, self::FS_ENTRY_BODY, $draw);
+                $wrapped = $this->wrapStyled($words, $textWidth, $this->bodyFontSize);
+                $lh2 = $this->lineHeightFor($this->bodyFontSize);
+                $y = $this->drawStyledLines($wrapped, $textX, $y, $lh2, $this->bodyFontSize, $draw);
             }
         }
 
