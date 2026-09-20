@@ -115,7 +115,15 @@ final class CvPdfGenerator extends FPDF
 
         $this->SetAutoPageBreak(false);
         $this->SetMargins(self::MARGIN_L, 0, self::MARGIN_R);
-        $this->SetTitle((string) ($data['header']['name'] ?? 'CV'));
+        $title = 'CV';
+        if (isset($data['header']['name']) && is_string($data['header']['name'])) {
+            $title = $data['header']['name'];
+        }
+
+        if (isset($data['header']['title']) && is_string($data['header']['title'])) {
+            $title .= ' - ' . $data['header']['title'];
+        }
+        $this->SetTitle($title);
         $this->SetCreator('cv-generator');
         $this->SetDisplayMode('fullpage');
     }
