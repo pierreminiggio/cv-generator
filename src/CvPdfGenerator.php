@@ -45,6 +45,7 @@ final class CvPdfGenerator extends FPDF
     private const DIVIDER_GAP_ABOVE = 3.0;
     private const DIVIDER_GAP_BELOW = 3.0;
     private const DIVIDER_LINE_WIDTH = 0.6; // also used for the header box border
+    private const FREETIME_GAP_ABOVE = 8.0; // minimum gap between the last education entry and the freetime box
 
     private const COL_GAP_EXP = 7.0;
     // Keeps the original 103:76 experience/education proportions regardless
@@ -95,7 +96,12 @@ final class CvPdfGenerator extends FPDF
     private FlagSpriteCache $flagCache;
 
     // Spacing "levers" tightened by fitContent() until everything fits.
-    private float $entryGap = 7.0;  // vertical gap between two different entries
+    // Experience/education entries are stretched independently, after the
+    // base spacing/font tier is chosen, to fill whatever vertical room is
+    // left in each column (so entries spread out with a page-filling
+    // rhythm instead of bunching at the top with dead space below).
+    private float $expEntryGap = 7.0;
+    private float $eduEntryGap = 7.0;
     private float $lineGap  = 0.9;  // gap between title/did/used (or title/content) lines
     // Font sizes for entry titles/bodies: start at the normal sizes, only
     // tightened by fitContent() as a last resort, after spacing alone no
@@ -184,7 +190,8 @@ final class CvPdfGenerator extends FPDF
         $expBottom = $eduBottom = PHP_FLOAT_MAX;
 
         foreach ($tiers as [$gap, $lineGap, $bodyFs, $titleFs]) {
-            $this->entryGap = $gap;
+            $this->expEntryGap = $gap;
+            $this->eduEntryGap = $gap;
             $this->lineGap = $lineGap;
             $this->bodyFontSize = $bodyFs;
             $this->titleFontSize = $titleFs;
@@ -196,6 +203,7 @@ final class CvPdfGenerator extends FPDF
             $eduH = $eduBottom - $rowTop;
 
             if ($expH <= $available && $eduH <= $available) {
+                $this->stretchColumns($rowTop, $available);
                 return;
             }
         }
@@ -208,6 +216,40 @@ final class CvPdfGenerator extends FPDF
             $eduBottom - $rowTop,
             $available
         ));
+    }
+
+    /**
+     * Once a spacing/font tier that fits has been found, spread each
+     * column's entries across whatever vertical room is actually left in
+     * it - so entries fill the page with a deliberate, even rhythm instead
+     * of bunching at the top with dead space left below (or, for
+     * education, left above the pinned freetime box).
+     */
+    private function stretchColumns(float $rowTop, float $available): void
+    {
+        $expCount = count($this->data['experiences'] ?? []);
+        if ($expCount > 1) {
+            $expH = $this->drawExperiences($rowTop, false) - $rowTop;
+            $slack = $available - $expH;
+            if ($slack > 0) {
+                $this->expEntryGap += $slack / ($expCount - 1);
+            }
+        }
+
+        $eduCount = count($this->data['education'] ?? []);
+        if ($eduCount > 1) {
+            $freetimeH = $this->measureFreetime(self::EDU_COL_W);
+            $freetimeTargetTop = max(
+                self::PAGE_H - self::MARGIN_BOTTOM - $freetimeH,
+                $rowTop
+            );
+            $availableForEntries = $freetimeTargetTop - self::FREETIME_GAP_ABOVE - $rowTop;
+            $eduH = $this->drawEducationEntries($rowTop, false) - $rowTop;
+            $slack = $availableForEntries - $eduH;
+            if ($slack > 0) {
+                $this->eduEntryGap += $slack / ($eduCount - 1);
+            }
+        }
     }
 
     // =========================================================================
@@ -446,7 +488,7 @@ final class CvPdfGenerator extends FPDF
         $entries = $this->data['experiences'] ?? [];
         foreach ($entries as $i => $entry) {
             if ($i > 0) {
-                $y += $this->entryGap;
+                $y += $this->expEntryGap;
             }
             $y = $this->layoutEntry($entry, $x, $y, self::EXP_COL_W, $draw, false);
         }
@@ -458,7 +500,7 @@ final class CvPdfGenerator extends FPDF
     // Education (right column) + "free time" pinned to the bottom-right corner
     // =========================================================================
 
-    private function drawEducationAndFreetime(float $top, bool $draw): float
+    private function drawEducationEntries(float $top, bool $draw): float
     {
         $x = self::MARGIN_L + self::EXP_COL_W + self::COL_GAP_EXP;
         $y = $this->drawSectionHeading('Education :', $x, $top, self::EDU_COL_W, $draw, true, self::C_TEXT_DEFAULT);
@@ -466,17 +508,25 @@ final class CvPdfGenerator extends FPDF
         $entries = $this->data['education'] ?? [];
         foreach ($entries as $i => $entry) {
             if ($i > 0) {
-                $y += $this->entryGap;
+                $y += $this->eduEntryGap;
             }
             $y = $this->layoutEntry($entry, $x, $y, self::EDU_COL_W, $draw, true);
         }
+
+        return $y;
+    }
+
+    private function drawEducationAndFreetime(float $top, bool $draw): float
+    {
+        $x = self::MARGIN_L + self::EXP_COL_W + self::COL_GAP_EXP;
+        $y = $this->drawEducationEntries($top, $draw);
 
         // "Things I like to do in my free time" is pinned to the bottom-right
         // corner of the page: measure its height first, then place it flush
         // with the page's bottom margin, whatever the education column's height.
         $freetimeH = $this->measureFreetime(self::EDU_COL_W);
         $freetimeY = self::PAGE_H - self::MARGIN_BOTTOM - $freetimeH;
-        $freetimeTop = max($y + 8.0, $freetimeY);
+        $freetimeTop = max($y + self::FREETIME_GAP_ABOVE, $freetimeY);
 
         if ($draw) {
             $this->drawFreetime($x, $freetimeTop, self::EDU_COL_W);
@@ -487,26 +537,33 @@ final class CvPdfGenerator extends FPDF
 
     private function measureFreetime(float $width): float
     {
-        return $this->layoutFreetime(0, 0, $width, false);
+        $innerWidth = $width - 2 * self::FREETIME_PAD;
+
+        return $this->layoutFreetime(0, 0, $innerWidth, false) + 2 * self::FREETIME_PAD;
     }
 
     private function drawFreetime(float $x, float $y, float $width): void
     {
-        $h = $this->layoutFreetime($x, $y, $width, false);
+        // Measure at the same (padded) width used for the actual content
+        // below, not the full column width - otherwise the box would be
+        // sized as if text wrapped less than it actually does once padding
+        // narrows the usable width, throwing off its computed height.
+        $innerWidth = $width - 2 * self::FREETIME_PAD;
+        $h = $this->layoutFreetime($x + self::FREETIME_PAD, $y + self::FREETIME_PAD, $innerWidth, false)
+            + 2 * self::FREETIME_PAD;
 
         $this->SetDrawColor(...self::C_DARK_GREY);
         $this->SetLineWidth(self::DIVIDER_LINE_WIDTH);
         $this->Line($x, $y, $x + $width, $y);           // top border
         $this->Line($x, $y, $x, $y + $h);                // left border
 
-        $this->layoutFreetime($x + self::FREETIME_PAD, $y + self::FREETIME_PAD, $width - self::FREETIME_PAD, true);
+        $this->layoutFreetime($x + self::FREETIME_PAD, $y + self::FREETIME_PAD, $innerWidth, true);
     }
 
     private function layoutFreetime(float $x, float $y, float $width, bool $draw): float
     {
         $startY = $y;
         $freetime = $this->data['freetime'] ?? [];
-        $y += ($draw ? 0 : self::FREETIME_PAD); // account for padding when only measuring
 
         $y = $this->drawSectionHeading((string) ($freetime['heading'] ?? ''), $x, $y, $width, $draw, false);
 
@@ -516,8 +573,6 @@ final class CvPdfGenerator extends FPDF
             $lh = $this->lineHeightFor(self::FS_SKILL);
             $y = $this->drawStyledLines($wrapped, $x, $y, $lh, self::FS_SKILL, $draw);
         }
-
-        $y += ($draw ? 0 : self::FREETIME_PAD);
 
         return $y - $startY;
     }
