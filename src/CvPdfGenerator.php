@@ -123,7 +123,7 @@ final class CvPdfGenerator extends FPDF
         if (isset($data['header']['title']) && is_string($data['header']['title'])) {
             $title .= ' - ' . $data['header']['title'];
         }
-        $this->SetTitle($title);
+        $this->SetTitle($title, true);
         $this->SetCreator('cv-generator');
         $this->SetDisplayMode('fullpage');
     }
