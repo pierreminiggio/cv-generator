@@ -33,7 +33,7 @@ final class CvPdfGenerator extends FPDF
     private const MARGIN_BOTTOM = 7.0;
     private const CONTENT_W = self::PAGE_W - self::MARGIN_L - self::MARGIN_R; // 198
 
-    private const HEADER_H = 36.0;
+    private const HEADER_H = 40.0;
     private const HEADER_PAD_Y = 7.0; // gap from the header box's top/bottom border to its content
     private const HEADER_PAD_X = self::HEADER_PAD_Y / 2; // left/right padding: half the top/bottom one
     private const PHOTO_SIZE = 26.0;
@@ -194,39 +194,89 @@ final class CvPdfGenerator extends FPDF
         $this->Rect($x0, $y0, $boxW, self::HEADER_H);
 
         $textX = $x0 + self::HEADER_PAD_X;
-        $y = $y0 + self::HEADER_PAD_Y;
+        $photoX = ($x0 + $boxW) - self::HEADER_PAD_X - self::PHOTO_SIZE;
+        // How much horizontal room the 3 text lines have before the photo.
+        $textMaxWidth = $photoX - $textX - 5.0;
+        // How much vertical room they have, between the top and bottom padding.
+        $textMaxHeight = self::HEADER_H - 2 * self::HEADER_PAD_Y;
 
-        $this->SetTextColor(...self::C_HEADING);
-        $this->applyFont(true, false, self::FS_TITLE);
-        $this->SetXY($textX, $y);
-        $this->Cell(0, 9.5, $this->txt($this->data['header']['title'] ?? ''));
-        $y += 9.5;
-
-        $this->applyFont(true, false, self::FS_NAME);
-        $this->SetXY($textX, $y);
+        $title = (string) ($this->data['header']['title'] ?? '');
         $name = trim(($this->data['header']['name'] ?? '') . '  ' . ($this->data['header']['phone'] ?? ''));
-        $this->Cell(0, 6.5, $this->txt($name));
-        $y += 7.2;
-
-        $this->applyFont(false, false, self::FS_CONTACT);
         $email = (string) ($this->data['header']['email'] ?? '');
         $website = (string) ($this->data['header']['website'] ?? '');
         $websiteUrl = (string) ($this->data['header']['website_url'] ?? ('https://' . $website));
 
+        $titleTxt = $this->txt($title);
+        $nameTxt = $this->txt($name);
+        $emailTxt = $this->txt($email);
+        $websiteTxt = $this->txt($website);
+        $contactGap = ($email !== '' && $website !== '') ? 3.0 : 0.0;
+
+        $this->applyFont(true, false, self::FS_TITLE);
+        $titleW = $this->GetStringWidth($titleTxt);
+        $this->applyFont(true, false, self::FS_NAME);
+        $nameW = $this->GetStringWidth($nameTxt);
+        $this->applyFont(false, false, self::FS_CONTACT);
+        $contactW = $this->GetStringWidth($emailTxt) + $contactGap + $this->GetStringWidth($websiteTxt);
+
+        // Scale all 3 lines up together (keeping their relative sizes, so
+        // the title stays the biggest, etc.) by whichever amount lets the
+        // widest-relative-to-its-own-size line reach the available width,
+        // without any line's height pushing the stack past the available
+        // vertical room. Never shrinks below the base sizes, and capped so
+        // one short line alone can't blow the scale up absurdly.
+        $baseHeightSum = $this->lineHeightFor(self::FS_TITLE)
+            + $this->lineHeightFor(self::FS_NAME)
+            + $this->lineHeightFor(self::FS_CONTACT);
+
+        $scale = min(
+            $titleW > 0 ? $textMaxWidth / $titleW : PHP_FLOAT_MAX,
+            $nameW > 0 ? $textMaxWidth / $nameW : PHP_FLOAT_MAX,
+            $contactW > 0 ? $textMaxWidth / $contactW : PHP_FLOAT_MAX,
+            $textMaxHeight / $baseHeightSum,
+            1.6
+        );
+        // No artificial floor of 1.0 here: if even the base sizes don't
+        // fit (a very long title, say), $scale legitimately needs to drop
+        // below 1 to avoid the title overlapping the photo - the min()
+        // above already keeps every line within the available box either
+        // way, growing when there's room to spare and shrinking only when
+        // truly necessary.
+
+        $sizeTitle = self::FS_TITLE * $scale;
+        $sizeName = self::FS_NAME * $scale;
+        $sizeContact = self::FS_CONTACT * $scale;
+        $lhTitle = $this->lineHeightFor($sizeTitle);
+        $lhName = $this->lineHeightFor($sizeName);
+        $lhContact = $this->lineHeightFor($sizeContact);
+
+        // Centre the (now taller) 3-line block in the leftover vertical
+        // space rather than always hugging the top padding.
+        $y = $y0 + (self::HEADER_H - ($lhTitle + $lhName + $lhContact)) / 2;
+
+        $this->SetTextColor(...self::C_HEADING);
+        $this->applyFont(true, false, $sizeTitle);
+        $this->SetXY($textX, $y);
+        $this->Cell(0, $lhTitle, $titleTxt);
+        $y += $lhTitle;
+
+        $this->applyFont(true, false, $sizeName);
+        $this->SetXY($textX, $y);
+        $this->Cell(0, $lhName, $nameTxt);
+        $y += $lhName;
+
+        $this->applyFont(false, false, $sizeContact);
         $this->SetXY($textX, $y);
         if ($email !== '') {
-            $emailTxt = $this->txt($email);
             $w = $this->GetStringWidth($emailTxt);
-            $this->Cell($w, 5.0, $emailTxt, 0, 0, '', false, 'mailto:' . $email);
-            $this->SetX($this->GetX() + 3.0);
+            $this->Cell($w, $lhContact, $emailTxt, 0, 0, '', false, 'mailto:' . $email);
+            $this->SetX($this->GetX() + $contactGap);
         }
         if ($website !== '') {
-            $websiteTxt = $this->txt($website);
-            $this->Cell($this->GetStringWidth($websiteTxt), 5.0, $websiteTxt, 0, 0, '', false, $websiteUrl);
+            $this->Cell($this->GetStringWidth($websiteTxt), $lhContact, $websiteTxt, 0, 0, '', false, $websiteUrl);
         }
 
         // Photo, top right corner of the header box.
-        $photoX = ($x0 + $boxW) - self::HEADER_PAD_X - self::PHOTO_SIZE;
         $photoY = $y0 + (self::HEADER_H - self::PHOTO_SIZE) / 2;
         $photoPath = $this->data['photo'] ?? null;
 
