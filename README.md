@@ -25,6 +25,9 @@ vendored under `src/Fpdf/`).
 ├── public/
 │   ├── index.php          Front controller: loads the data, builds and streams the PDF
 │   └── favicon.php        Serves /favicon.ico, built from cv_image.png
+├── tests/
+│   ├── run.php            Dependency-free test runner:  php tests/run.php
+│   └── *Test.php          The tests themselves (auto-discovered by run.php)
 ├── src/
 │   ├── CvData.php         Picks cv.php if present, else cv_example.php
 │   ├── CvPdfGenerator.php All the layout/drawing logic
@@ -81,6 +84,21 @@ The array shape is documented with inline comments at the top of
   single quotes don't interpret `\n` at all, so it stays as a literal
   backslash-n and prints as such. If you need to keep single quotes for
   some reason, write `'Line one' . "\n" . 'Line two'` instead.
+- The titles above the two main columns ("Work Experiences :" on the left,
+  "Education :" on the right) are set under the optional `section_titles`
+  key:
+  ```php
+  'section_titles' => [
+      'experiences' => 'Professional Experience :',
+      'education'   => 'Education & Training :',
+  ],
+  ```
+  Both lines are optional - leave one (or the whole key) out and that
+  title keeps its built-in default, so a `cv.php` written before this key
+  existed keeps working unchanged. Titles are printed exactly as written
+  (include the trailing ` :` yourself if you want it, like the skill
+  headings) and can't be empty; a title too long for its column is shrunk
+  slightly, then wrapped.
 - One experience entry can be marked `'force_one_line' => true` (see the
   SantéVet entry in the example) to force its title onto a single line -
   the generator automatically shrinks that title's font just enough to
@@ -128,6 +146,30 @@ The array shape is documented with inline comments at the top of
   unlike an HTML `target="_blank"`, a PDF link's behaviour (same tab, new
   tab, downloads, ...) is entirely up to whatever PDF viewer/browser the
   reader is using, with no setting in the file itself to control it.
+
+## Running the tests
+
+```
+php tests/run.php
+```
+
+There's no Composer or PHPUnit here on purpose (same "no dependencies"
+rule as the rest of the project): `tests/run.php` is a tiny runner that
+loads every `tests/*Test.php` file, prints one `PASS`/`FAIL` line per test
+and exits with a non-zero status if anything failed. It's CLI-only.
+
+The tests are hermetic - they need no network (logos are left out and the
+flag sprite is pointed at an unreachable address, so the generator uses
+its normal offline fallbacks), they never read your private `cv.php`
+(config-loading tests use a throwaway project folder; rendering tests use
+`cv_example.php`), and they clean up their temp files. To add tests, drop
+a new `tests/SomethingTest.php` that calls `test('name', function () {...})`
+using the `assert*()` helpers defined in `run.php`.
+
+Currently covered: the optional `section_titles` setting (validation of
+bad values, defaults when omitted, overriding one or both titles, accented
+characters, very long titles) - each rendering test also checks the result
+is still a single A4 page.
 
 ## How the "fits on one page, guaranteed" part works
 

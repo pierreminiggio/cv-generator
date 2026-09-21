@@ -54,7 +54,13 @@ final class CvPdfGenerator extends FPDF
     private const EXP_COL_W = (self::CONTENT_W - self::COL_GAP_EXP) * self::EXP_EDU_RATIO;
     private const EDU_COL_W = (self::CONTENT_W - self::COL_GAP_EXP) - self::EXP_COL_W;
 
-    private const SECTION_HEADER_GAP = 3.0; // above & below "Work Experiences :" / "Education :"
+    private const SECTION_HEADER_GAP = 3.0; // above & below the experiences / education section titles
+
+    // Built-in section titles, used whenever cv.php doesn't set its own
+    // under 'section_titles' (see sectionTitle()). The trailing " :" is part
+    // of the string, like every other heading in the CV data.
+    private const DEFAULT_TITLE_EXPERIENCES = 'Work Experiences :';
+    private const DEFAULT_TITLE_EDUCATION   = 'Education :';
 
     private const LOGO_SIZE = 8.0;
     private const LOGO_TEXT_GAP = 3.0;
@@ -476,6 +482,17 @@ final class CvPdfGenerator extends FPDF
         $this->Line(self::MARGIN_L, $y, self::MARGIN_L + self::CONTENT_W, $y);
     }
 
+    /**
+     * Title shown above the experiences / education columns: the value from
+     * $data['section_titles'][$key] when cv.php sets one, otherwise $default.
+     */
+    private function sectionTitle(string $key, string $default): string
+    {
+        $title = $this->data['section_titles'][$key] ?? null;
+
+        return is_string($title) && trim($title) !== '' ? $title : $default;
+    }
+
     // =========================================================================
     // Work Experiences (left column)
     // =========================================================================
@@ -483,7 +500,7 @@ final class CvPdfGenerator extends FPDF
     private function drawExperiences(float $top, bool $draw): float
     {
         $x = self::MARGIN_L;
-        $y = $this->drawSectionHeading('Work Experiences :', $x, $top, self::EXP_COL_W, $draw, true, self::C_TEXT_DEFAULT);
+        $y = $this->drawSectionHeading($this->sectionTitle('experiences', self::DEFAULT_TITLE_EXPERIENCES), $x, $top, self::EXP_COL_W, $draw, true, self::C_TEXT_DEFAULT);
 
         $entries = $this->data['experiences'] ?? [];
         foreach ($entries as $i => $entry) {
@@ -503,7 +520,7 @@ final class CvPdfGenerator extends FPDF
     private function drawEducationEntries(float $top, bool $draw): float
     {
         $x = self::MARGIN_L + self::EXP_COL_W + self::COL_GAP_EXP;
-        $y = $this->drawSectionHeading('Education :', $x, $top, self::EDU_COL_W, $draw, true, self::C_TEXT_DEFAULT);
+        $y = $this->drawSectionHeading($this->sectionTitle('education', self::DEFAULT_TITLE_EDUCATION), $x, $top, self::EDU_COL_W, $draw, true, self::C_TEXT_DEFAULT);
 
         $entries = $this->data['education'] ?? [];
         foreach ($entries as $i => $entry) {
@@ -662,7 +679,7 @@ final class CvPdfGenerator extends FPDF
     }
 
     // =========================================================================
-    // Section headings ("Software Development :", "Work Experiences :", ...)
+    // Section headings ("Software Development :", the experiences / education titles, ...)
     // =========================================================================
 
     private function drawSectionHeading(string $text, float $x, float $y, float $width, bool $draw, bool $bigGap, ?array $color = null): float

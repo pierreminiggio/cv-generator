@@ -46,3 +46,13 @@ change's zip too, as an edited file.
   page part works" section of `README.md`. The auto-fit logic throws a
   clear `RuntimeException` if it can't fit; that exception is the signal
   something regressed, not something to silently work around.
+- **Tests live in `tests/` and must pass before every delivery.** Run
+  `php tests/run.php` (dependency-free runner - no Composer/PHPUnit, keep
+  it that way). A behaviour change comes with new or updated tests in a
+  `tests/*Test.php` file, and new/edited test files go in the delivery zip
+  like any other file. Tests must stay hermetic: no network access, and
+  never read or depend on the private `cv.php` (use a throwaway project
+  folder for `CvData` tests and `cv_example.php` data for rendering tests).
+  The same PHP 8.0 syntax constraint applies to test code. The suite's
+  one-page checks complement, but don't replace, looking at the regenerated
+  PDF after a layout change (previous bullet).

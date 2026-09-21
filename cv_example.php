@@ -21,6 +21,15 @@ declare(strict_types=1);
  *  - header        : title / name / phone / email / website.
  *  - skills_left   : list of skill blocks stacked in the left skills column.
  *  - skills_right  : list of skill blocks stacked in the right skills column.
+ *  - section_titles: OPTIONAL. The titles shown above the two columns
+ *                     below: 'experiences' (left) and 'education' (right).
+ *                     Each one is optional too - any you leave out keeps its
+ *                     built-in title ("Work Experiences :" / "Education :"),
+ *                     so a cv.php without this key keeps working unchanged.
+ *                     Titles are printed exactly as written (the trailing
+ *                     " :" is part of the string, like the skill headings)
+ *                     and must not be empty. A long title is shrunk a bit,
+ *                     then wrapped, to fit its column.
  *  - experiences   : list of work experience entries (left column).
  *  - education     : list of education entries (right column).
  *  - freetime      : the "Things I like to do in my free time" block,
@@ -104,6 +113,14 @@ return [
                 ['label' => 'Router', 'value' => 'Cisco routers configuration : VLAN, QOS, etc.'],
             ],
         ],
+    ],
+
+    // Optional: omit this whole key (or either line) to keep the defaults.
+    // Values shown here are the defaults; change them to whatever you like,
+    // e.g. 'Professional Experience :' or 'Education & Training :'.
+    'section_titles' => [
+        'experiences' => 'Work Experiences :',
+        'education'   => 'Education :',
     ],
 
     'experiences' => [

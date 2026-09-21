@@ -40,6 +40,38 @@ final class CvData
             }
         }
 
+        self::validateSectionTitles($data);
+
         return $data;
+    }
+
+    /**
+     * "section_titles" is optional (older cv.php files don't have it, and
+     * CvPdfGenerator falls back to its built-in titles), but when present
+     * it has to be well-formed so a typo fails loudly instead of silently
+     * producing a blank or wrong heading.
+     */
+    private static function validateSectionTitles(array $data): void
+    {
+        if (!array_key_exists('section_titles', $data)) {
+            return;
+        }
+
+        if (!is_array($data['section_titles'])) {
+            throw new RuntimeException('CV data key "section_titles" must be an array.');
+        }
+
+        foreach (['experiences', 'education'] as $key) {
+            if (!array_key_exists($key, $data['section_titles'])) {
+                continue; // this one falls back to its default title
+            }
+
+            $value = $data['section_titles'][$key];
+            if (!is_string($value) || trim($value) === '') {
+                throw new RuntimeException(
+                    sprintf('CV data key "section_titles" -> "%s" must be a non-empty string.', $key)
+                );
+            }
+        }
     }
 }
