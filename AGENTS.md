@@ -56,3 +56,20 @@ change's zip too, as an edited file.
   The same PHP 8.0 syntax constraint applies to test code. The suite's
   one-page checks complement, but don't replace, looking at the regenerated
   PDF after a layout change (previous bullet).
+- **New features are developed test-first (TDD), in effect from
+  2026-09-21 onward.** For any new feature or behaviour change: write the
+  `tests/*Test.php` test(s) for it first, run `php tests/run.php` and
+  confirm they fail for the expected reason (not a typo/setup mistake),
+  then implement the change, then run the suite again and iterate until
+  everything passes. Bug fixes follow the same shape: a test that
+  reproduces the bug (red) before the fix, passing (green) after it - see
+  `tests/SectionTitlesTest.php` for the established style (helper
+  functions prefixed by the file's own concern, e.g. `sectionTitlesXxx()`,
+  to avoid name clashes - every `tests/*Test.php` is `require`'d into the
+  same global scope by `tests/run.php`). Tests are run by the assistant
+  itself as part of doing the work, not left for the project owner to run -
+  a delivery whose tests weren't actually executed isn't done. When a
+  change is genuinely hard to test meaningfully (e.g. it's a pure visual
+  tweak with no observable effect on the PDF's content stream, page count,
+  or a computable constant), say so explicitly rather than skipping tests
+  silently.
